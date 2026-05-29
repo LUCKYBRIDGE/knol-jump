@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>놀퀴즈:점프맵</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="theme-jumpmap">
+    <button class="display-mode-toggle" type="button" id="display-mode-toggle" aria-label="화면 모드 전환">모드:자동</button>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <span class="brand-kicker">놀퀴즈 게임</span>
+          <h1>놀퀴즈:점프맵</h1>
+        </div>
+        <div class="topbar-right">
+          <div class="session-badge">발판을 딛고 정상까지</div>
+          <div class="topbar-actions" aria-label="화면 조작">
+            <button class="ghost-action compact-action" type="button" data-action="enter-fullscreen">전체화면</button>
+            <button class="ghost-action compact-action" type="button" data-action="exit-fullscreen" hidden>전체화면 해제</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="screen-stack">
+        <section class="screen setup-screen" id="setup-screen" aria-labelledby="setup-title">
+          <div class="screen-heading">
+            <div>
+              <span class="screen-kicker">설정</span>
+              <h2 id="setup-title">플레이 설정</h2>
+            </div>
+            <div class="current-summary" id="current-summary">퀴즈팩 · 1명 · 시간 선택 필요</div>
+          </div>
+
+          <div class="setup-grid">
+            <section class="showcase-card jumpmap-showcase" aria-label="점프맵 미리보기">
+              <div class="skyline">
+                <img class="quiz-float quiz-float-a" src="./assets/quiz/nets/cube-01.svg" alt="" />
+                <img class="quiz-float quiz-float-b" src="./assets/quiz/nets/facecolor/cube-01-facecolor-01-01.svg" alt="" />
+                <img class="plate plate-a" src="./assets/plates/plate_grass1.png" alt="" />
+                <img class="plate plate-b" src="./assets/plates/plate_grass2.png" alt="" />
+                <img class="plate plate-c" src="./assets/plates/plate_stone.png" alt="" />
+                <img class="hero-character hero-sejong" src="./assets/characters/sejong/sejong_jump.png" alt="" />
+                <img class="hero-character hero-leesunsin" src="./assets/characters/leesunsin/leesunsin_front.png" alt="" />
+              </div>
+              <div class="showcase-strip">
+                <span>점프와 착지</span>
+                <span>발판 돌파</span>
+                <span>정상 도전</span>
+              </div>
+            </section>
+
+            <section class="settings-card" aria-label="게임 시작 설정">
+              <div class="setup-select-row">
+                <div class="field-block">
+                  <label for="quiz-pack">퀴즈팩 선택</label>
+                  <select id="quiz-pack"></select>
+                </div>
+
+                <div class="field-block">
+                  <label for="map-select">맵 선택</label>
+                  <select id="map-select"></select>
+                </div>
+
+                <div class="field-block">
+                  <label for="time-options">플레이 시간</label>
+                  <select id="time-options" aria-label="플레이 시간"></select>
+                </div>
+              </div>
+
+              <div class="field-block">
+                <div class="field-label">사용자 수</div>
+                <div class="segmented" id="player-options" role="group" aria-label="사용자 수"></div>
+              </div>
+
+              <div class="field-block">
+                <div class="field-label">사용자별 캐릭터 선택</div>
+                <div class="character-grid" id="character-options" aria-label="사용자별 캐릭터 선택"></div>
+              </div>
+
+              <div class="setup-actions">
+                <button class="primary-action start-action" type="button" id="start-button" disabled>도전 시작</button>
+                <div class="error-text" id="setup-error" role="alert"></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="screen play-screen is-hidden" id="play-screen" aria-live="polite">
+          <div class="play-topline">
+            <div class="play-nav-actions">
+              <button class="ghost-action compact-action danger-action" type="button" id="finish-game-button" data-action="finish-game">게임 종료</button>
+            </div>
+            <div class="play-title" id="play-title">놀퀴즈:점프맵</div>
+            <div class="play-status-actions">
+              <div class="timer-pill" id="timer-pill">00:00</div>
+              <button class="ghost-action compact-action" type="button" data-action="enter-fullscreen">전체화면</button>
+              <button class="ghost-action compact-action" type="button" data-action="exit-fullscreen" hidden>전체화면 해제</button>
+            </div>
+          </div>
+
+          <div class="play-layout">
+            <section class="game-stage" id="game-stage" aria-label="점프맵 게임 화면"></section>
+            <section class="question-area" id="question-area" aria-label="문제와 선택지"></section>
+          </div>
+        </section>
+
+        <section class="screen result-screen is-hidden" id="result-screen" aria-labelledby="result-title" aria-modal="true" role="dialog">
+          <div class="result-modal">
+            <div class="result-header">
+              <div>
+                <span class="screen-kicker">Result</span>
+                <h2 id="result-title">점프맵 결과</h2>
+                <p id="result-subtitle">도전 결과</p>
+              </div>
+              <div class="result-header-tools">
+                <div class="timer-pill" id="result-time-pill">결과</div>
+                <button class="ghost-action compact-action" type="button" data-action="enter-fullscreen">전체화면</button>
+                <button class="ghost-action compact-action" type="button" data-action="exit-fullscreen" hidden>전체화면 해제</button>
+              </div>
+            </div>
+            <div class="player-results" id="player-results"></div>
+            <div class="result-grid" id="result-grid"></div>
+            <div class="result-actions">
+              <button class="primary-action" type="button" id="restart-same-button">다시 시작</button>
+              <button class="ghost-action" type="button" id="back-setup-button">메인화면</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      (() => {
+        if (window.location.protocol !== 'file:') return;
+        const showFileModeWarning = () => {
+          document.body.dataset.fileMode = 'true';
+          const summary = document.getElementById('current-summary');
+          const setupError = document.getElementById('setup-error');
+          const settingsCard = document.querySelector('.settings-card');
+          const startButton = document.getElementById('start-button');
+          if (summary) summary.textContent = '로컬 서버 주소로 실행 필요';
+          if (startButton) startButton.disabled = true;
+          const warningHtml = `
+            <div class="file-mode-warning">
+              <b>파일로 직접 열면 설정을 사용할 수 없습니다.</b>
+              <span>이 앱은 맵과 퀴즈 데이터를 불러와야 하므로 로컬 서버에서 실행해야 합니다.</span>
+              <a href="http://127.0.0.1:4271/">http://127.0.0.1:4271/ 로 열기</a>
+            </div>
+          `;
+          if (settingsCard && !settingsCard.querySelector('.file-mode-warning')) {
+            settingsCard.insertAdjacentHTML('afterbegin', warningHtml);
+          }
+          if (setupError) setupError.textContent = '현재 file:// 주소입니다. 위의 로컬 서버 주소로 접속하세요.';
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', showFileModeWarning, { once: true });
+        } else {
+          showFileModeWarning();
+        }
+      })();
+    </script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
