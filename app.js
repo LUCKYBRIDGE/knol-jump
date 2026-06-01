@@ -74,7 +74,7 @@ const RENDER_SLOW_FRAME_MS = 26;
 const RENDER_VERY_SLOW_FRAME_MS = 38;
 const RENDER_STABLE_FRAME_MS = 17.5;
 const IDLE_PHYSICS_SPEED_EPS = 0.02;
-const MIN_START_LOADING_MS = 2800;
+const MIN_START_LOADING_MS = 5600;
 const LOADING_SPRITE_FRAME_MS = 120;
 const LOADING_FACT_ROTATE_MS = 4600;
 const PRELOAD_IMAGE_DECODE_TIMEOUT_MS = 450;
@@ -420,7 +420,7 @@ const LOADING_GAME_FACTS = Object.freeze([
   }),
   Object.freeze({
     label: '게임 안내',
-    text: '방향키와 점프키를 함께 쓰면 다음 발판으로 더 자연스럽게 이동할 수 있어요.',
+    text: '방향키는 톡 누르기보다 계속 누른 채 점프하세요. 단발성 입력만으로는 장애물 넘기가 어려워요.',
     source: '놀퀴즈 점프맵 안내'
   })
 ]);
@@ -3079,6 +3079,8 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
       touchPointers: new Map(),
       touchActionCounts: new Map(),
       touchButtonCounts: new WeakMap(),
+      keyboardPointers: new Map(),
+      keyboardActionCounts: new Map(),
       lastUiUpdateAt: 0,
       lastQuizActionUpdateAt: 0,
       lastDatasetSyncAt: 0,
@@ -3273,6 +3275,12 @@ function getKeyboardControlForEvent(event) {
     if (matches(control.jump)) return { playerIndex, action: 'jump' };
   }
   return null;
+}
+
+function isKeyboardTextEntryTarget(event) {
+  const target = event?.target;
+  if (!target?.closest) return false;
+  return !!target.closest('input, textarea, select, [contenteditable="true"]');
 }
 
 function requestQuizForPlayer(playerIndex) {
@@ -5081,6 +5089,7 @@ function openQuiz(playerIndex = session?.activePlayerIndex || 0) {
   const quizPlayer = getPlayerByIndex(safeIndex);
   if (quizPlayer) {
     clearTouchPointersForPlayer(safeIndex);
+    clearKeyboardPointersForPlayer(safeIndex);
     if (quizPlayer.control) {
       quizPlayer.control.left = false;
       quizPlayer.control.right = false;
@@ -5159,6 +5168,7 @@ function closeQuiz({ playerIndex = session?.quizPlayerIndex, rotate = false, rea
     session.input.right = false;
     session.keyboardPlayerIndex = -1;
   }
+  clearKeyboardPointersForPlayer(safeIndex);
   if (rotate && session.players.length > 1) {
     rotatePlayer();
   } else if (reason === 'return_to_map' && quizPlayer?.gauge <= GAUGE_EPSILON) {
@@ -5223,6 +5233,11 @@ function submitAnswer(choice, playerIndex = session?.quizPlayerIndex) {
 function getTouchPointerKey(event) {
   if (event?.pointerId != null) return `pointer:${event.pointerId}`;
   return 'pointer:mouse';
+}
+
+function getKeyboardPointerKey(event) {
+  const key = event?.code || event?.key || '';
+  return key ? `keyboard:${key}` : '';
 }
 
 function setTouchButtonActive(button, active) {
@@ -5309,6 +5324,73 @@ function clearAllTouchPointers() {
   [...session.runtime.touchPointers.keys()].forEach((key) => releaseTouchPointer(key));
 }
 
+function applyKeyboardControl(playerIndex, action, active, { queueJump = true } = {}) {
+  const player = getPlayerByIndex(playerIndex);
+  if (!session || !player) return false;
+  if (active && isPlayerQuizLocked(playerIndex)) return false;
+  if (action === 'left') {
+    player.control.left = !!active;
+    return true;
+  }
+  if (action === 'right') {
+    player.control.right = !!active;
+    return true;
+  }
+  if (action === 'jump') {
+    if (active) {
+      if (queueJump) queuePlayerJump(player);
+      else player.state.input.jumpHeld = true;
+    } else {
+      player.state.input.jumpHeld = false;
+    }
+    return true;
+  }
+  return false;
+}
+
+function setKeyboardActionActive(playerIndex, action, active, options = {}) {
+  if (!session?.runtime?.keyboardActionCounts) return applyKeyboardControl(playerIndex, action, active, options);
+  const key = getTouchActionKey(playerIndex, action);
+  const counts = session.runtime.keyboardActionCounts;
+  const current = Math.max(0, Number(counts.get(key)) || 0);
+  if (active) {
+    if (current === 0 && !applyKeyboardControl(playerIndex, action, true, options)) return false;
+    counts.set(key, current + 1);
+    return true;
+  }
+  if (current <= 0) return false;
+  const next = current - 1;
+  if (next > 0) {
+    counts.set(key, next);
+    return true;
+  }
+  counts.delete(key);
+  applyKeyboardControl(playerIndex, action, false, options);
+  return true;
+}
+
+function releaseKeyboardPointer(pointerKey) {
+  if (!session?.runtime?.keyboardPointers || !pointerKey) return;
+  const pointer = session.runtime.keyboardPointers.get(pointerKey);
+  if (!pointer) return;
+  session.runtime.keyboardPointers.delete(pointerKey);
+  setKeyboardActionActive(pointer.playerIndex, pointer.action, false);
+}
+
+function clearKeyboardPointersForPlayer(playerIndex) {
+  if (!session?.runtime?.keyboardPointers) return;
+  const keys = [];
+  session.runtime.keyboardPointers.forEach((pointer, key) => {
+    if (pointer.playerIndex === playerIndex) keys.push(key);
+  });
+  keys.forEach((key) => releaseKeyboardPointer(key));
+}
+
+function clearAllKeyboardPointers() {
+  if (!session?.runtime?.keyboardPointers) return;
+  [...session.runtime.keyboardPointers.keys()].forEach((key) => releaseKeyboardPointer(key));
+}
+
 function resetPlayerViewportScroll(playerIndex = null) {
   if (!elements?.gameStage) return;
   const selector = playerIndex == null
@@ -5326,13 +5408,18 @@ function queuePlayerViewportScrollReset(playerIndex = null) {
 }
 
 function bindTouchControls() {
+  const pointerOptions = { passive: false };
+  const touchOptions = { passive: false };
   const cleanup = $$('[data-touch]', elements.gameStage).map((button) => {
     const playerIndex = Number(button.dataset.touchPlayer) || 0;
     const action = button.dataset.touch || '';
     const keepViewportFixed = () => queuePlayerViewportScrollReset(playerIndex);
-    const down = (event) => {
+    const prevent = (event) => {
       event.preventDefault();
       event.stopPropagation();
+    };
+    const down = (event) => {
+      prevent(event);
       keepViewportFixed();
       const pointerKey = getTouchPointerKey(event);
       releaseTouchPointer(pointerKey, event);
@@ -5346,33 +5433,47 @@ function bindTouchControls() {
       }
     };
     const up = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+      prevent(event);
       releaseTouchPointer(getTouchPointerKey(event), event);
       keepViewportFixed();
     };
     const leave = (event) => {
       if (event.pointerType === 'mouse') up(event);
     };
-    const lost = () => keepViewportFixed();
-    const prevent = (event) => event.preventDefault();
-    button.addEventListener('pointerdown', down);
-    button.addEventListener('pointerup', up);
-    button.addEventListener('pointercancel', up);
-    button.addEventListener('pointerleave', leave);
-    button.addEventListener('lostpointercapture', lost);
+    const lost = (event) => {
+      prevent(event);
+      releaseTouchPointer(getTouchPointerKey(event), event);
+      keepViewportFixed();
+    };
+    const click = (event) => {
+      prevent(event);
+      keepViewportFixed();
+    };
+    button.addEventListener('pointerdown', down, pointerOptions);
+    button.addEventListener('pointerup', up, pointerOptions);
+    button.addEventListener('pointercancel', up, pointerOptions);
+    button.addEventListener('pointerleave', leave, pointerOptions);
+    button.addEventListener('lostpointercapture', lost, pointerOptions);
+    button.addEventListener('touchstart', prevent, touchOptions);
+    button.addEventListener('touchmove', prevent, touchOptions);
+    button.addEventListener('touchend', prevent, touchOptions);
+    button.addEventListener('touchcancel', prevent, touchOptions);
     button.addEventListener('focus', keepViewportFixed);
-    button.addEventListener('click', keepViewportFixed);
+    button.addEventListener('click', click);
     button.addEventListener('contextmenu', prevent);
     button.addEventListener('dragstart', prevent);
     return () => {
-      button.removeEventListener('pointerdown', down);
-      button.removeEventListener('pointerup', up);
-      button.removeEventListener('pointercancel', up);
-      button.removeEventListener('pointerleave', leave);
-      button.removeEventListener('lostpointercapture', lost);
+      button.removeEventListener('pointerdown', down, pointerOptions);
+      button.removeEventListener('pointerup', up, pointerOptions);
+      button.removeEventListener('pointercancel', up, pointerOptions);
+      button.removeEventListener('pointerleave', leave, pointerOptions);
+      button.removeEventListener('lostpointercapture', lost, pointerOptions);
+      button.removeEventListener('touchstart', prevent, touchOptions);
+      button.removeEventListener('touchmove', prevent, touchOptions);
+      button.removeEventListener('touchend', prevent, touchOptions);
+      button.removeEventListener('touchcancel', prevent, touchOptions);
       button.removeEventListener('focus', keepViewportFixed);
-      button.removeEventListener('click', keepViewportFixed);
+      button.removeEventListener('click', click);
       button.removeEventListener('contextmenu', prevent);
       button.removeEventListener('dragstart', prevent);
       button.classList.remove('is-active');
@@ -5389,44 +5490,28 @@ function bindTouchControls() {
 function bindRuntimeInput() {
   const onKeyDown = (event) => {
     if (!session || document.body.dataset.screen !== 'play') return;
-    if (event.target?.closest?.('.quiz-card')) return;
+    if (isKeyboardTextEntryTarget(event)) return;
     const control = getKeyboardControlForEvent(event);
     if (!control) return;
     event.preventDefault();
-    const player = getPlayerByIndex(control.playerIndex);
-    if (!player || isPlayerQuizLocked(control.playerIndex)) return;
-    if (control.action === 'left') {
-      player.control.left = true;
-      return;
-    }
-    if (control.action === 'right') {
-      player.control.right = true;
-      return;
-    }
-    if (!event.repeat) queuePlayerJump(player);
-    player.state.input.jumpHeld = true;
+    const pointerKey = getKeyboardPointerKey(event);
+    if (!pointerKey || session.runtime.keyboardPointers.has(pointerKey)) return;
+    if (isPlayerQuizLocked(control.playerIndex)) return;
+    if (!setKeyboardActionActive(control.playerIndex, control.action, true, { queueJump: !event.repeat })) return;
+    session.runtime.keyboardPointers.set(pointerKey, control);
   };
   const onKeyUp = (event) => {
     if (!session) return;
-    if (event.target?.closest?.('.quiz-card')) return;
+    if (isKeyboardTextEntryTarget(event)) return;
     const control = getKeyboardControlForEvent(event);
     if (!control) return;
     event.preventDefault();
-    const player = getPlayerByIndex(control.playerIndex);
-    if (!player) return;
-    if (control.action === 'left') {
-      player.control.left = false;
-      return;
-    }
-    if (control.action === 'right') {
-      player.control.right = false;
-      return;
-    }
-    player.state.input.jumpHeld = false;
+    releaseKeyboardPointer(getKeyboardPointerKey(event));
   };
   const onBlur = () => {
     if (!session) return;
     clearAllTouchPointers();
+    clearAllKeyboardPointers();
     session.input.left = false;
     session.input.right = false;
     session.keyboardPlayerIndex = -1;
