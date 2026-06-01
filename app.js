@@ -61,6 +61,7 @@ const OTHER_PLAYER_SPRITE_ALPHA = 0.28;
 const OTHER_PLAYER_LABEL_ALPHA = 0.14;
 const DEFAULT_PLAY_MINUTES = 3;
 const WEAKNESS_PRACTICE_MIN_READY_MS = 650;
+const PLAYER_SPRITE_LOGICAL_SIZE = 256;
 const RANDOM_CHARACTER_ID = 'random';
 const RANDOM_CHARACTER_OPTION = {
   id: RANDOM_CHARACTER_ID,
@@ -407,6 +408,7 @@ const elements = {
   characterOptions: $('#character-options'),
   startButton: $('#start-button'),
   setupError: $('#setup-error'),
+  gugudanStatusDetails: $('#gugudan-status-details'),
   gugudanStatusButton: $('#gugudan-status-button'),
   gugudanStatusFile: $('#gugudan-status-file'),
   gugudanMergeRecordsButton: $('#gugudan-merge-records-button'),
@@ -1296,8 +1298,15 @@ function getWeaknessPracticeInput(recordType = 'gugudan') {
     : elements.gugudanWeaknessPracticeFile;
 }
 
+function openGugudanStatusDetails() {
+  if (elements.gugudanStatusDetails && !elements.gugudanStatusDetails.open) {
+    elements.gugudanStatusDetails.open = true;
+  }
+}
+
 function renderWeaknessPracticeStatus(message, recordType = 'gugudan', options = {}) {
   if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  openGugudanStatusDetails();
   const config = getPracticeRecordConfig(recordType);
   const busy = options.kind === 'busy';
   const error = options.kind === 'error';
@@ -2083,6 +2092,7 @@ function renderGugudanStatusReport(record, fileName = '', options = {}) {
 
 function renderGugudanStatusPanelError(message, recordType = 'gugudan') {
   if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  openGugudanStatusDetails();
   const config = getPracticeRecordConfig(recordType);
   elements.gugudanStatusPanel.classList.remove('is-hidden', 'is-success');
   elements.gugudanStatusPanel.classList.add('is-error');
@@ -2097,6 +2107,7 @@ function renderGugudanStatusPanelError(message, recordType = 'gugudan') {
 
 function renderGugudanStatusPanel(parsed, fileName = '', options = {}) {
   if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  openGugudanStatusDetails();
   const recordType = options.recordType || parsed?.recordType || 'gugudan';
   const config = getPracticeRecordConfig(recordType);
   if (!parsed?.factMap?.size) {
@@ -3879,10 +3890,15 @@ function getPlayerSpriteCrop(runtimeMap, image) {
   return { x, y, w, h, metaW, metaH };
 }
 
+function getPlayerSpriteResolutionScale(crop) {
+  const sourceSize = Math.max(1, Number(crop?.metaW) || 1, Number(crop?.metaH) || 1);
+  return PLAYER_SPRITE_LOGICAL_SIZE / sourceSize;
+}
+
 function getPlayerSpriteRender(runtimeMap, image) {
   const metrics = getPlayerMetrics(runtimeMap);
   const crop = getPlayerSpriteCrop(runtimeMap, image);
-  const scale = metrics.scale;
+  const scale = metrics.scale * getPlayerSpriteResolutionScale(crop);
   const spriteW = crop.w * scale;
   const spriteH = crop.h * scale;
   return {

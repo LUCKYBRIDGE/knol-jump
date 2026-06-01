@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>놀퀴즈:점프맵</title>
-    <link rel="stylesheet" href="./styles.css?v=20260601-heonanseolheon" />
+    <link rel="stylesheet" href="./styles.css?v=20260601-character-pixels" />
   </head>
   <body class="theme-jumpmap">
     <button class="display-mode-toggle" type="button" id="display-mode-toggle" aria-label="화면 모드 전환">모드:자동</button>
@@ -112,29 +112,37 @@
                 <div class="character-grid" id="character-options" aria-label="사용자별 캐릭터 선택"></div>
               </div>
 
-              <section class="gugudan-status-check" aria-label="연산 기록 상태 확인">
-                <div class="gugudan-status-copy">
-                  <b>구구단 · 나눗셈 누적 상태</b>
-                  <p>저장해 둔 기록 파일을 열어 상태를 확인하거나 같은 학생번호 파일을 하나로 합칩니다.</p>
+              <details class="gugudan-status-check" id="gugudan-status-details" aria-label="내 구구단/나눗셈 상태">
+                <summary class="gugudan-status-summary">
+                  <span class="gugudan-status-copy">
+                    <b>내 구구단/나눗셈 상태</b>
+                    <span class="gugudan-status-description">기록 파일로 상태를 확인하거나 같은 학생번호 파일을 합칩니다.</span>
+                  </span>
+                  <span class="gugudan-status-toggle" aria-hidden="true">
+                    <span class="when-closed">펴기</span>
+                    <span class="when-open">접기</span>
+                  </span>
+                </summary>
+                <div class="gugudan-status-body">
+                  <div class="gugudan-status-actions">
+                    <button class="ghost-action gugudan-status-action" type="button" id="gugudan-status-button">내 구구단 상태 확인</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">구구단 기록 합치기</button>
+                    <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="gugudan-weakness-practice-button">구구단 취약점 연습</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-status-button">내 나눗셈(구구단) 상태 확인</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-merge-records-button">나눗셈 기록 합치기</button>
+                    <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="division-gugudan-weakness-practice-button">나눗셈 취약점 연습</button>
+                  </div>
+                  <input class="is-hidden" id="gugudan-status-file" type="file" accept=".csv,text/csv" />
+                  <input class="is-hidden" id="gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
+                  <input class="is-hidden" id="gugudan-weakness-practice-file" type="file" accept=".csv,text/csv" />
+                  <input class="is-hidden" id="division-gugudan-status-file" type="file" accept=".csv,text/csv" />
+                  <input class="is-hidden" id="division-gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
+                  <input class="is-hidden" id="division-gugudan-weakness-practice-file" type="file" accept=".csv,text/csv" />
+                  <section class="gugudan-status-panel is-hidden" id="gugudan-status-panel" aria-live="polite" aria-label="내 구구단/나눗셈 상태">
+                    <div id="gugudan-status-content"></div>
+                  </section>
                 </div>
-                <div class="gugudan-status-actions">
-                  <button class="ghost-action gugudan-status-action" type="button" id="gugudan-status-button">내 구구단 상태 확인</button>
-                  <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">구구단 기록 합치기</button>
-                  <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="gugudan-weakness-practice-button">구구단 취약점 연습</button>
-                  <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-status-button">내 나눗셈(구구단) 상태 확인</button>
-                  <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-merge-records-button">나눗셈 기록 합치기</button>
-                  <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="division-gugudan-weakness-practice-button">나눗셈 취약점 연습</button>
-                </div>
-                <input class="is-hidden" id="gugudan-status-file" type="file" accept=".csv,text/csv" />
-                <input class="is-hidden" id="gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
-                <input class="is-hidden" id="gugudan-weakness-practice-file" type="file" accept=".csv,text/csv" />
-                <input class="is-hidden" id="division-gugudan-status-file" type="file" accept=".csv,text/csv" />
-                <input class="is-hidden" id="division-gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
-                <input class="is-hidden" id="division-gugudan-weakness-practice-file" type="file" accept=".csv,text/csv" />
-                <section class="gugudan-status-panel is-hidden" id="gugudan-status-panel" aria-live="polite" aria-label="연산 기록 상태">
-                  <div id="gugudan-status-content"></div>
-                </section>
-              </section>
+              </details>
 
               <div class="setup-actions">
                 <button class="primary-action start-action" type="button" id="start-button" disabled>도전 시작</button>
@@ -264,7 +272,7 @@
         }
       })();
     </script>
-    <script src="./assets/vendor/qr-js.js?v=20260601-heonanseolheon"></script>
-    <script type="module" src="./app.js?v=20260601-heonanseolheon"></script>
+    <script src="./assets/vendor/qr-js.js?v=20260601-character-pixels"></script>
+    <script type="module" src="./app.js?v=20260601-character-pixels"></script>
   </body>
 </html>
