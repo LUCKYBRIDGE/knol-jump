@@ -1,6 +1,6 @@
-import './assets/runtime/jumpmap-test-physics-utils.js?v=20260601-physics-cache';
-import { JumpmapRuntimeGeometry } from './assets/runtime/jumpmap-runtime-geometry.js?v=20260601-physics-cache';
-import { JumpmapRuntimePhysics } from './assets/runtime/jumpmap-runtime-physics.js?v=20260601-physics-cache';
+import './assets/runtime/jumpmap-test-physics-utils.js?v=20260601-runtime-step-lite';
+import { JumpmapRuntimeGeometry } from './assets/runtime/jumpmap-runtime-geometry.js?v=20260601-runtime-step-lite';
+import { JumpmapRuntimePhysics } from './assets/runtime/jumpmap-runtime-physics.js?v=20260601-runtime-step-lite';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -2793,6 +2793,24 @@ function getPlayerHitboxOffset(runtimeMap) {
   };
 }
 
+function normalizeRuntimePlayerHitboxPolygon(runtimeMap) {
+  const source = Array.isArray(runtimeMap?.playerHitboxPolygon?.points)
+    ? runtimeMap.playerHitboxPolygon.points
+    : (Array.isArray(runtimeMap?.playerHitboxPolygon) ? runtimeMap.playerHitboxPolygon : null);
+  if (!Array.isArray(source) || source.length < 3) return null;
+  const points = source
+    .map((point) => ({
+      x: Number(point?.x),
+      y: Number(point?.y)
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .map((point) => ({
+      x: clamp(point.x, 0, 1),
+      y: clamp(point.y, 0, 1)
+    }));
+  return points.length >= 3 ? { points, normalized: true } : null;
+}
+
 function getTunedRuntimePhysics(physics = {}) {
   const next = { ...(physics || {}) };
   const jumpSpeed = Math.max(0, Number(physics?.jumpSpeed) || 0);
@@ -2954,11 +2972,13 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
   const objects = getRuntimeObjects(runtimeMap);
   const background = normalizeMapBackground(runtimeMap);
   const metrics = getPlayerMetrics(runtimeMap);
+  const physicsObjects = Array.isArray(runtimeMap.objects) ? runtimeMap.objects : [];
+  const playerHitboxPolygon = normalizeRuntimePlayerHitboxPolygon(runtimeMap);
   const characters = Array.isArray(runtimeCharacters)
     ? runtimeCharacters
     : getSelectedCharacters(selectedPlayers);
   const obstacles = mapBundle.obstacles || JumpmapRuntimePhysics.collectObstacleBounds({
-    objects: Array.isArray(runtimeMap.objects) ? runtimeMap.objects : [],
+    objects: physicsObjects,
     localPointToWorld: JumpmapRuntimeGeometry.localPointToWorld
   });
 
@@ -3014,8 +3034,10 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
       mapRect: { width: summary.width, height: summary.height },
       metrics,
       hitboxOffset: getPlayerHitboxOffset(runtimeMap),
+      playerHitboxPolygon,
       physics: getTunedRuntimePhysics(runtimeMap.physics || {}),
       moveSpeed: getRuntimeMoveSpeed(runtimeMap),
+      physicsObjects,
       objects,
       objectDrawBins: buildMapObjectDrawBins(objects),
       objectChunkIndex: buildMapObjectChunkIndex(objects),
@@ -3025,6 +3047,9 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
       objectChunkPrepareHandle: 0,
       playerSpriteRenderCache: new Map(),
       playerLabelCache: new Map(),
+      sharedStaticLayer: null,
+      worldPointToLocal: JumpmapRuntimeGeometry.worldPointToLocal,
+      localPointToWorld: JumpmapRuntimeGeometry.localPointToWorld,
       background,
       obstacles,
       canvas: null,
@@ -3036,6 +3061,8 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
       fixedAccumulator: 0,
       sidePanelSignature: '',
       uiRefs: null,
+      playerUiSignatures: [],
+      quizButtonSignatures: [],
       canvasSizeCache: new WeakMap(),
       canvasSizeDirty: true,
       renderScale: RENDER_SCALE_MAX,
@@ -3467,20 +3494,34 @@ function updateGaugeUi() {
   if (!session) return;
   const uiRefs = session.runtime.uiRefs || collectStageUiRefs();
   const now = performance.now();
+  const runtime = session.runtime;
+  if (!Array.isArray(runtime.playerUiSignatures)) runtime.playerUiSignatures = [];
+  if (!Array.isArray(runtime.quizButtonSignatures)) runtime.quizButtonSignatures = [];
   session.players.forEach((player, index) => {
     const refs = uiRefs?.players?.[index] || {};
     const playerPercent = getGaugePercent(player);
     const gaugeText = formatGauge(player.gauge || 0);
     const heightText = formatHeightMeters(player.bestHeight);
     const accuracyText = getPlayerAccuracyText(player);
+    const heightRecordActive = Number(player.bestHeightNoticeUntil) > now;
+    const playerSignature = [
+      Math.round(playerPercent * 10),
+      gaugeText,
+      heightText,
+      accuracyText,
+      heightRecordActive ? 1 : 0,
+      index === session.activePlayerIndex ? 1 : 0,
+      playerPercent <= GAUGE_EPSILON ? 1 : 0
+    ].join('|');
+    if (runtime.playerUiSignatures[index] === playerSignature) return;
+    runtime.playerUiSignatures[index] = playerSignature;
     refs.gaugeValues?.forEach((element) => setTextIfChanged(element, gaugeText));
     refs.gaugeFills?.forEach((element) => setWidthIfChanged(element, playerPercent));
     refs.heights?.forEach((element) => setTextIfChanged(element, heightText));
     refs.accuracies?.forEach((element) => setTextIfChanged(element, accuracyText));
     refs.heightRecords?.forEach((element) => {
-      const active = Number(player.bestHeightNoticeUntil) > now;
-      setHiddenIfChanged(element, !active);
-      if (active) setTextIfChanged(element, `최고 높이 갱신 ${heightText}`);
+      setHiddenIfChanged(element, !heightRecordActive);
+      if (heightRecordActive) setTextIfChanged(element, `최고 높이 갱신 ${heightText}`);
     });
     refs.viewports?.forEach((element) => {
       toggleClassIfChanged(element, 'is-active', index === session.activePlayerIndex);
@@ -3490,10 +3531,11 @@ function updateGaugeUi() {
   uiRefs?.quizButtons?.forEach((button) => {
     const playerIndex = Number(button.dataset.quizPlayer) || 0;
     const player = getPlayerByIndex(playerIndex);
-    setDisabledIfChanged(
-      button,
-      isPlayerQuizLocked(playerIndex) || (isPlayerGaugeEmpty(player) && !isPlayerGroundedForQuiz(player))
-    );
+    const disabled = isPlayerQuizLocked(playerIndex) || (isPlayerGaugeEmpty(player) && !isPlayerGroundedForQuiz(player));
+    const signature = disabled ? '1' : '0';
+    if (runtime.quizButtonSignatures[playerIndex] === signature) return;
+    runtime.quizButtonSignatures[playerIndex] = signature;
+    setDisabledIfChanged(button, disabled);
   });
 }
 
@@ -3544,6 +3586,8 @@ function renderStageShell() {
   session.runtime.ctx = session.runtime.contexts[session.activePlayerIndex] || session.runtime.contexts[0] || null;
   session.runtime.canvasSizeDirty = true;
   session.runtime.lastViewportRenderSignatures = [];
+  session.runtime.playerUiSignatures = [];
+  session.runtime.quizButtonSignatures = [];
   collectStageUiRefs();
   bindGaugeButton();
   bindPlayerSelectors();
@@ -3789,6 +3833,7 @@ function resetRenderCaches(runtime = session?.runtime) {
   runtime.canvasSizeDirty = true;
   runtime.canvasSizeCache = new WeakMap();
   runtime.backgroundCache?.clear?.();
+  if (runtime.sharedStaticLayer) runtime.sharedStaticLayer.key = '';
   runtime.lastSceneRenderSignature = '';
   runtime.lastViewportRenderSignatures = [];
 }
@@ -4217,6 +4262,43 @@ function drawDebugHitboxes(ctx, camera, projector) {
   ctx.restore();
 }
 
+function drawStaticScene(ctx, size, camera, projector) {
+  drawBackground(ctx, size);
+  drawMapObjects(ctx, camera, projector);
+  drawDebugHitboxes(ctx, camera, projector);
+}
+
+function getStaticSceneKey(size, camera) {
+  return [
+    `${size.width}x${size.height}`,
+    Number(camera.x || 0).toFixed(3),
+    Number(camera.y || 0).toFixed(3),
+    Number(camera.width || 0).toFixed(3),
+    Number(camera.height || 0).toFixed(3),
+    session?.runtime?.debugHitboxes ? 1 : 0
+  ].join('|');
+}
+
+function ensureSharedStaticLayer(runtime, size) {
+  if (!runtime) return null;
+  const width = Math.max(1, Math.round(Number(size?.width) || 1));
+  const height = Math.max(1, Math.round(Number(size?.height) || 1));
+  let layer = runtime.sharedStaticLayer;
+  if (!layer?.canvas || !layer?.ctx) {
+    const canvas = document.createElement('canvas');
+    const ctx = getCanvasContext2d(canvas, CHUNK_CANVAS_CONTEXT_OPTIONS);
+    if (!ctx) return null;
+    layer = { canvas, ctx };
+    runtime.sharedStaticLayer = layer;
+  }
+  if (layer.canvas.width !== width || layer.canvas.height !== height) {
+    layer.canvas.width = width;
+    layer.canvas.height = height;
+    layer.key = '';
+  }
+  return layer;
+}
+
 function getRuntimeEffectBudgetScale() {
   const renderScale = Number(session?.runtime?.renderScale) || RENDER_SCALE_MAX;
   if (renderScale <= 0.8) return 0.55;
@@ -4311,7 +4393,7 @@ function hasSpriteGroundContact(player) {
       minSupportSpanPx: 0,
       supportYTolerance: 2.5,
       sampleSpacing: Number(session.runtime.physics?.groundSampleSpacing) || undefined,
-      playerHitboxPolygon: session.runtime.map?.playerHitboxPolygon || null
+      playerHitboxPolygon: session.runtime.playerHitboxPolygon
     });
     if (supportFootY == null) return false;
     const footY = (Number(playerState.y) || 0) + (Number(session.runtime.metrics?.height) || 0);
@@ -4580,7 +4662,7 @@ function drawPlayers(ctx, camera, projector, viewPlayer = getActivePlayer()) {
       ctx.save();
       ctx.strokeStyle = active ? 'rgba(37, 99, 235, 0.96)' : 'rgba(20, 32, 47, 0.6)';
       ctx.lineWidth = 2;
-      const polygon = getPlayerHitboxPolygonPoints(state, metrics, session.runtime.map);
+      const polygon = getPlayerHitboxPolygonPoints(state, metrics, session.runtime);
       if (polygon) {
         ctx.beginPath();
         polygon.forEach((point, index) => {
@@ -4693,10 +4775,10 @@ function drawScene({ force = false } = {}) {
   }
   if (force || runtime.canvasSizeDirty) resetPlayerViewportScroll();
   let drewAnyViewport = false;
-  session.runtime.canvases.forEach((canvas, index) => {
+  const viewports = session.runtime.canvases.map((canvas, index) => {
     const ctx = runtime.contexts[index];
     const viewPlayer = session.players[index] || getActivePlayer();
-    if (!canvas || !ctx || !viewPlayer) return;
+    if (!canvas || !ctx || !viewPlayer) return null;
     const size = ensureCanvasSize(canvas);
     const camera = computeCamera(size, viewPlayer);
     if (index === session.activePlayerIndex) {
@@ -4706,15 +4788,57 @@ function drawScene({ force = false } = {}) {
     }
     const projector = buildProjector(size, camera);
     const viewportSignature = getViewportRenderSignature(index, size, camera, viewPlayer, now, playerSignatures);
+    const staticKey = getStaticSceneKey(size, camera);
+    return { canvas, ctx, viewPlayer, size, camera, projector, viewportSignature, staticKey, index };
+  }).filter(Boolean);
+  const staticKeyCounts = new Map();
+  viewports.forEach((viewport) => {
+    staticKeyCounts.set(viewport.staticKey, (staticKeyCounts.get(viewport.staticKey) || 0) + 1);
+  });
+  let sharedStaticKey = '';
+  for (const [key, count] of staticKeyCounts) {
+    if (count > 1) {
+      sharedStaticKey = key;
+      break;
+    }
+  }
+  let sharedStaticLayerDrawn = false;
+
+  viewports.forEach((viewport) => {
+    const {
+      ctx,
+      viewPlayer,
+      size,
+      camera,
+      projector,
+      viewportSignature,
+      staticKey,
+      index
+    } = viewport;
     if (!force && !runtime.canvasSizeDirty && viewportSignature === runtime.lastViewportRenderSignatures[index]) {
       return;
     }
 
     ctx.clearRect(0, 0, size.width, size.height);
-    drawBackground(ctx, size);
-    drawMapObjects(ctx, camera, projector);
+    if (sharedStaticKey && staticKey === sharedStaticKey) {
+      const layer = ensureSharedStaticLayer(runtime, size);
+      if (layer) {
+        if (!sharedStaticLayerDrawn) {
+          if (force || runtime.canvasSizeDirty || layer.key !== staticKey) {
+            layer.ctx.clearRect(0, 0, size.width, size.height);
+            drawStaticScene(layer.ctx, size, camera, projector);
+            layer.key = staticKey;
+          }
+          sharedStaticLayerDrawn = true;
+        }
+        ctx.drawImage(layer.canvas, 0, 0);
+      } else {
+        drawStaticScene(ctx, size, camera, projector);
+      }
+    } else {
+      drawStaticScene(ctx, size, camera, projector);
+    }
     drawLandingDust(ctx, camera, projector, viewPlayer);
-    drawDebugHitboxes(ctx, camera, projector);
     drawPlayers(ctx, camera, projector, viewPlayer);
     runtime.lastViewportRenderSignatures[index] = viewportSignature;
     drewAnyViewport = true;
@@ -4807,19 +4931,23 @@ function stepPlayerPhysics(player, dt) {
     if (!player.gaugeEmptyNotified || wasOnGround) notifyGaugeEmpty(player);
   }
 
-  JumpmapRuntimePhysics.stepPlayerState({
+  const physicsArgs = player._physicsStepArgs || {
     playerState: state,
     dt,
     moveSpeed: session.runtime.moveSpeed,
     physics: session.runtime.physics,
     metrics: session.runtime.metrics,
-    playerHitboxPolygon: session.runtime.map?.playerHitboxPolygon || null,
+    playerHitboxPolygon: session.runtime.playerHitboxPolygon,
     map: session.runtime.mapRect,
-    objects: Array.isArray(session.runtime.map?.objects) ? session.runtime.map.objects : [],
+    objects: session.runtime.physicsObjects,
     obstacles: session.runtime.obstacles,
-    worldPointToLocal: JumpmapRuntimeGeometry.worldPointToLocal,
-    localPointToWorld: JumpmapRuntimeGeometry.localPointToWorld
-  });
+    worldPointToLocal: session.runtime.worldPointToLocal,
+    localPointToWorld: session.runtime.localPointToWorld
+  };
+  physicsArgs.playerState = state;
+  physicsArgs.dt = dt;
+  player._physicsStepArgs = physicsArgs;
+  JumpmapRuntimePhysics.stepPlayerState(physicsArgs);
 
   updatePlayerProgress(player);
   if (state.y > session.runtime.mapRect.height - session.runtime.metrics.height + FALL_RESPAWN_PAD) {
