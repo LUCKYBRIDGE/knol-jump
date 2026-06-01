@@ -60,6 +60,7 @@ const PLAYER_LABEL_COLORS = ['#38bdf8', '#f97316', '#22c55e', '#d946ef'];
 const OTHER_PLAYER_SPRITE_ALPHA = 0.28;
 const OTHER_PLAYER_LABEL_ALPHA = 0.14;
 const DEFAULT_PLAY_MINUTES = 3;
+const WEAKNESS_PRACTICE_MIN_READY_MS = 650;
 const RANDOM_CHARACTER_ID = 'random';
 const RANDOM_CHARACTER_OPTION = {
   id: RANDOM_CHARACTER_ID,
@@ -165,6 +166,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '새 하늘을 연 대왕',
       leesunsin: '정상에 선 충무공',
+      heonanseolheon: '새 하늘을 노래한 시인',
       default: '새 기록의 정상'
     }
   },
@@ -176,6 +178,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '한글을 밝힌 대왕',
       leesunsin: '바다를 지킨 충무공',
+      heonanseolheon: '별을 밝힌 난설헌',
       default: '정상에 닿은 도전자'
     }
   },
@@ -187,6 +190,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '문치를 펼친 성군',
       leesunsin: '불패의 수군 지휘관',
+      heonanseolheon: '하늘에 닿은 문장가',
       default: '높은 하늘의 개척자'
     }
   },
@@ -198,6 +202,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '나라를 세운 지혜',
       leesunsin: '나라를 지킨 장수',
+      heonanseolheon: '시로 길을 연 재능',
       default: '굳건한 기록 보유자'
     }
   },
@@ -209,6 +214,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '집현전의 별',
       leesunsin: '한산도 전략가',
+      heonanseolheon: '초희의 빛난 글',
       default: '오래 버틴 탐험가'
     }
   },
@@ -220,6 +226,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '백성을 살핀 임금',
       leesunsin: '판옥선 지휘관',
+      heonanseolheon: '꽃잎을 적은 시인',
       default: '가파른 길의 지휘관'
     }
   },
@@ -231,6 +238,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '훈민정음 연구자',
       leesunsin: '수군 훈련대장',
+      heonanseolheon: '시를 익힌 문장가',
       default: '발판을 읽는 탐험가'
     }
   },
@@ -242,6 +250,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '글을 다듬는 학자',
       leesunsin: '바다를 읽는 장수',
+      heonanseolheon: '글길을 오른 시인',
       default: '탑을 넘은 도전자'
     }
   },
@@ -253,6 +262,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '별을 헤아린 학자',
       leesunsin: '항로를 익힌 수군',
+      heonanseolheon: '별빛을 읽는 시인',
       default: '별빛 발판 탐험가'
     }
   },
@@ -264,6 +274,7 @@ const HEIGHT_GRADE_TIERS = [
     titles: {
       sejong: '집현전 새내기',
       leesunsin: '수군 훈련병',
+      heonanseolheon: '난설헌 새내기',
       default: '첫 발판 도전자'
     }
   }
@@ -299,6 +310,21 @@ const CHARACTERS = [
     jump: './assets/characters/leesunsin/leesunsin_jump.png',
     damaged: './assets/characters/leesunsin/leesunsin_damaged.png',
     fall: './assets/characters/leesunsin/leesunsin_fall.png'
+  },
+  {
+    id: 'heonanseolheon',
+    label: '허난설헌',
+    front: './assets/characters/hernanseolheon/heonanseolheon_front.png',
+    right: './assets/characters/hernanseolheon/heonanseolheon_rightside.png',
+    walk: [
+      './assets/characters/hernanseolheon/heonanseolheon_walk1.png',
+      './assets/characters/hernanseolheon/heonanseolheon_walk2.png',
+      './assets/characters/hernanseolheon/heonanseolheon_walk3.png',
+      './assets/characters/hernanseolheon/heonanseolheon_walk4.png'
+    ],
+    jump: './assets/characters/hernanseolheon/heonanseolheon_jump.png',
+    damaged: './assets/characters/hernanseolheon/heonanseolheon_damaged.png',
+    fall: './assets/characters/hernanseolheon/heonanseolheon_fall.png'
   }
 ];
 
@@ -336,6 +362,23 @@ const LOADING_FACTS_BY_CHARACTER = Object.freeze({
       text: '숙종실록에는 이순신 사당에 현충이라는 이름을 내렸다는 기록이 있어요.',
       source: '조선왕조실록 숙종 33년 2월 6일'
     })
+  ]),
+  heonanseolheon: Object.freeze([
+    Object.freeze({
+      label: '허난설헌 역사 이야기',
+      text: '허난설헌은 조선 중기의 시인으로, 이름은 초희였고 호가 난설헌이에요.',
+      source: '한국민족문화대백과 허난설헌'
+    }),
+    Object.freeze({
+      label: '허난설헌 문학 이야기',
+      text: '허난설헌의 시문은 동생 허균이 정리해 난설헌집으로 전해졌어요.',
+      source: '한국민족문화대백과 난설헌집'
+    }),
+    Object.freeze({
+      label: '허난설헌 역사 이야기',
+      text: '허난설헌은 강릉을 대표하는 조선 시대 문학 인물로 소개되고 있어요.',
+      source: '강릉시 문화관광'
+    })
   ])
 });
 
@@ -368,10 +411,14 @@ const elements = {
   gugudanStatusFile: $('#gugudan-status-file'),
   gugudanMergeRecordsButton: $('#gugudan-merge-records-button'),
   gugudanMergeRecordsFile: $('#gugudan-merge-records-file'),
+  gugudanWeaknessPracticeButton: $('#gugudan-weakness-practice-button'),
+  gugudanWeaknessPracticeFile: $('#gugudan-weakness-practice-file'),
   divisionGugudanStatusButton: $('#division-gugudan-status-button'),
   divisionGugudanStatusFile: $('#division-gugudan-status-file'),
   divisionGugudanMergeRecordsButton: $('#division-gugudan-merge-records-button'),
   divisionGugudanMergeRecordsFile: $('#division-gugudan-merge-records-file'),
+  divisionGugudanWeaknessPracticeButton: $('#division-gugudan-weakness-practice-button'),
+  divisionGugudanWeaknessPracticeFile: $('#division-gugudan-weakness-practice-file'),
   gugudanStatusPanel: $('#gugudan-status-panel'),
   gugudanStatusContent: $('#gugudan-status-content'),
   gugudanReportModal: $('#gugudan-report-modal'),
@@ -428,6 +475,7 @@ let selectedCharacterIds = Array.from({ length: Math.max(...PLAYER_COUNTS) }, (_
   CHARACTERS[index % CHARACTERS.length]?.id || 'sejong'
 ));
 let selectedDisplayMode = 'auto';
+let activeWeaknessPractice = null;
 let session = null;
 let viewportUpdateRaf = 0;
 let startLoadingSpriteTimer = 0;
@@ -1227,6 +1275,219 @@ function parseGugudanCsvAggregate(text, recordType = 'gugudan') {
   return { factMap, studentIds, sourceLabels, recordType };
 }
 
+function getWeaknessPracticeLabel(recordType = 'gugudan') {
+  return `${getPracticeRecordConfig(recordType).sourceLabel} 취약점 연습`;
+}
+
+function getActiveWeaknessPractice(packId = selectedPackId) {
+  if (!activeWeaknessPractice) return null;
+  return activeWeaknessPractice.packId === packId ? activeWeaknessPractice : null;
+}
+
+function clearWeaknessPractice(message = '') {
+  if (!activeWeaknessPractice) return;
+  activeWeaknessPractice = null;
+  if (message && elements.setupError) elements.setupError.textContent = message;
+}
+
+function getWeaknessPracticeInput(recordType = 'gugudan') {
+  return recordType === 'division-gugudan'
+    ? elements.divisionGugudanWeaknessPracticeFile
+    : elements.gugudanWeaknessPracticeFile;
+}
+
+function renderWeaknessPracticeStatus(message, recordType = 'gugudan', options = {}) {
+  if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  const config = getPracticeRecordConfig(recordType);
+  const busy = options.kind === 'busy';
+  const error = options.kind === 'error';
+  elements.gugudanStatusPanel.classList.remove('is-hidden', 'is-error', 'is-success');
+  elements.gugudanStatusPanel.classList.toggle('is-error', error);
+  elements.gugudanStatusPanel.classList.toggle('is-success', !error);
+  const metrics = Array.isArray(options.metrics) ? options.metrics : [];
+  elements.gugudanStatusContent.innerHTML = `
+    <div class="gugudan-status-head">
+      <b>${escapeHtml(config.sourceLabel)} 취약점 연습</b>
+      <span>${escapeHtml(busy ? '분석 중' : (options.fileName || '기록 파일'))}</span>
+    </div>
+    ${metrics.length ? `
+      <div class="gugudan-status-grid">
+        ${metrics.map(([label, value]) => `
+          <div><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>
+        `).join('')}
+      </div>
+    ` : ''}
+    <p class="gugudan-status-message${error ? '' : ' is-strong'}">${escapeHtml(message)}</p>
+  `;
+}
+
+function getPracticeAnswerRange(recordType = 'gugudan') {
+  return recordType === 'division-gugudan'
+    ? { min: 1, max: 9 }
+    : { min: 2, max: 81 };
+}
+
+function createPracticeChoiceValues(answer, fact, recordType = 'gugudan') {
+  const safeAnswer = Math.round(Number(answer) || 0);
+  const range = getPracticeAnswerRange(recordType);
+  const values = new Set([safeAnswer]);
+  const add = (value) => {
+    const next = Math.round(Number(value) || 0);
+    if (next >= range.min && next <= range.max) values.add(next);
+  };
+
+  if (recordType === 'division-gugudan') {
+    add(safeAnswer - 2);
+    add(safeAnswer - 1);
+    add(safeAnswer + 1);
+    add(safeAnswer + 2);
+  } else {
+    add((fact.dan || 0) * ((fact.multiplier || 0) - 1));
+    add((fact.dan || 0) * ((fact.multiplier || 0) + 1));
+    add(((fact.dan || 0) - 1) * (fact.multiplier || 0));
+    add(((fact.dan || 0) + 1) * (fact.multiplier || 0));
+    add(safeAnswer - (fact.dan || 0));
+    add(safeAnswer + (fact.dan || 0));
+  }
+
+  for (let offset = 1; values.size < 4 && offset <= 12; offset += 1) {
+    add(safeAnswer - offset);
+    add(safeAnswer + offset);
+  }
+  for (let value = range.min; values.size < 4 && value <= range.max; value += 1) {
+    add(value);
+  }
+  const distractors = Array.from(values).filter((value) => value !== safeAnswer);
+  return shuffle([safeAnswer, ...shuffle(distractors).slice(0, 3)]).map(String);
+}
+
+function createWeaknessPracticeQuestion(item, recordType = 'gugudan', index = 0) {
+  const config = getPracticeRecordConfig(recordType);
+  const dan = Math.round(Number(item?.dan) || 0);
+  const multiplier = Math.round(Number(item?.multiplier) || 0);
+  const answer = recordType === 'division-gugudan' ? multiplier : dan * multiplier;
+  const text = recordType === 'division-gugudan'
+    ? `${dan * multiplier} ÷ ${dan} = ?`
+    : `${dan} × ${multiplier} = ?`;
+  return {
+    id: `weakness-${config.key}-${dan}-${multiplier}-${index}`,
+    prompt: '취약점 연습 문제',
+    text,
+    choices: createPracticeChoiceValues(answer, { dan, multiplier }, recordType),
+    answer: String(answer),
+    asset: false,
+    weaknessPractice: true
+  };
+}
+
+function buildWeaknessPracticeQuestions(factMap, recordType = 'gugudan') {
+  const allAttempted = getSortedGugudanFacts(factMap).filter((item) => item.attempts > 0);
+  const facts = allAttempted.filter((item) => item.wrong > 0);
+  const danger = sortGugudanWeakItems(facts.filter((item) => getGugudanRiskLevel(item) === 'danger'));
+  const warning = sortGugudanWeakItems(facts.filter((item) => getGugudanRiskLevel(item) === 'warning'));
+  const stable = allAttempted
+    .filter((item) => getGugudanRiskLevel(item) === 'ok')
+    .sort((left, right) => right.attempts - left.attempts || left.dan - right.dan || left.multiplier - right.multiplier);
+  const ordered = [...danger, ...warning];
+  const weighted = [];
+  danger.forEach((item) => {
+    for (let index = 0; index < 4; index += 1) weighted.push(item);
+  });
+  warning.forEach((item) => {
+    for (let index = 0; index < 2; index += 1) weighted.push(item);
+  });
+  const stableReviewCount = Math.min(stable.length, weighted.length ? Math.max(1, Math.round(weighted.length * 0.08)) : 0);
+  stable.slice(0, stableReviewCount).forEach((item) => weighted.push(item));
+  if (!weighted.length) return { questions: [], dangerCount: 0, warningCount: 0, stableCount: 0, weakCount: 0 };
+  while (weighted.length < Math.min(18, Math.max(6, ordered.length * 3))) {
+    ordered.forEach((item) => weighted.push(item));
+  }
+  return {
+    questions: shuffle(weighted).map((item, index) => createWeaknessPracticeQuestion(item, recordType, index + 1)),
+    dangerCount: danger.length,
+    warningCount: warning.length,
+    stableCount: stableReviewCount,
+    weakCount: ordered.length
+  };
+}
+
+async function prepareWeaknessPracticeFromFile(file, recordType = 'gugudan') {
+  if (!file) return;
+  const config = getPracticeRecordConfig(recordType);
+  const input = getWeaknessPracticeInput(recordType);
+  const startedAt = performance.now();
+  elements.setupError.textContent = '';
+  elements.startButton.disabled = true;
+  renderWeaknessPracticeStatus(`${config.sourceLabel} 기록을 읽고 취약 문항을 고르는 중입니다.`, recordType, {
+    kind: 'busy',
+    fileName: file.name || ''
+  });
+
+  try {
+    const text = await file.text();
+    await keepMinimumLoadingTime(startedAt, WEAKNESS_PRACTICE_MIN_READY_MS);
+    const parsed = parseGugudanCsvAggregate(text, recordType);
+    if (!parsed.factMap.size) {
+      activeWeaknessPractice = null;
+      renderWeaknessPracticeStatus(config.missingText, recordType, { kind: 'error', fileName: file.name || '' });
+      return;
+    }
+    const studentIds = Array.from(parsed.studentIds).filter(Boolean);
+    if (studentIds.length > 1) {
+      activeWeaknessPractice = null;
+      renderWeaknessPracticeStatus('학생번호가 여러 개인 파일입니다. 한 학생의 종합 기록 파일을 선택해 주세요.', recordType, {
+        kind: 'error',
+        fileName: file.name || ''
+      });
+      return;
+    }
+    const built = buildWeaknessPracticeQuestions(parsed.factMap, recordType);
+    if (!built.questions.length) {
+      activeWeaknessPractice = null;
+      renderWeaknessPracticeStatus('누적 오답이 없어 취약점 연습 문제를 만들지 않았습니다. 일반 연습으로 진행해도 됩니다.', recordType, {
+        kind: 'error',
+        fileName: file.name || ''
+      });
+      return;
+    }
+
+    selectedPackId = config.packId;
+    selectedPlayers = 1;
+    activeWeaknessPractice = {
+      recordType,
+      packId: config.packId,
+      label: getWeaknessPracticeLabel(recordType),
+      fileName: file.name || '',
+      studentText: studentIds[0] || '학생번호 없음',
+      questions: built.questions,
+      dangerCount: built.dangerCount,
+      warningCount: built.warningCount,
+      stableCount: built.stableCount,
+      weakCount: built.weakCount
+    };
+    renderSetupControls();
+    renderWeaknessPracticeStatus('준비 완료 · 도전 시작을 누르면 1인 취약점 연습으로 시작합니다.', recordType, {
+      fileName: file.name || '',
+      metrics: [
+        ['학생번호', activeWeaknessPractice.studentText],
+        ['집중 연습', `${built.dangerCount}문항`],
+        ['다시 확인', `${built.warningCount}문항`],
+        ['안정 확인', `${built.stableCount}문항`],
+        ['출제 목록', `${built.questions.length}문제`]
+      ]
+    });
+  } catch (_error) {
+    activeWeaknessPractice = null;
+    renderWeaknessPracticeStatus(`${config.sourceLabel} 기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.`, recordType, {
+      kind: 'error',
+      fileName: file.name || ''
+    });
+  } finally {
+    if (input) input.value = '';
+    updateSetupSummary();
+  }
+}
+
 function getSortedGugudanFacts(factMap) {
   return Array.from(factMap.values()).sort((left, right) => (
     left.dan - right.dan || left.multiplier - right.multiplier
@@ -1453,13 +1714,18 @@ function renderGugudanRecordPanel() {
   const config = getPracticeRecordConfig(recordType);
   const factMap = getCurrentGugudanFactMap();
   const hasRecords = factMap.size > 0;
+  const weaknessMode = session?.practiceMode?.type === 'weakness';
   const title = panel.querySelector('.gugudan-record-copy b');
   const copy = panel.querySelector('.gugudan-record-copy p');
-  if (title) title.textContent = config.recordTitle;
+  if (title) title.textContent = weaknessMode ? `${config.sourceLabel} 취약점 연습 기록 저장` : config.recordTitle;
   if (copy) {
-    copy.textContent = hasRecords
-      ? getGugudanWeaknessText(factMap, recordType)
-      : '문제를 1개 이상 풀면 기록을 저장할 수 있습니다. 학생번호는 앱 안에 저장하지 않습니다.';
+    if (hasRecords && weaknessMode) {
+      copy.textContent = `${getGugudanWeaknessText(factMap, recordType)} 취약점 연습 결과도 같은 기록 파일에 누적됩니다.`;
+    } else {
+      copy.textContent = hasRecords
+        ? getGugudanWeaknessText(factMap, recordType)
+        : '문제를 1개 이상 풀면 기록을 저장할 수 있습니다. 학생번호는 앱 안에 저장하지 않습니다.';
+    }
   }
   if (elements.gugudanDownloadCurrentButton) elements.gugudanDownloadCurrentButton.disabled = !hasRecords;
   if (elements.gugudanMergeCsvButton) elements.gugudanMergeCsvButton.disabled = !hasRecords;
@@ -2026,6 +2292,8 @@ function syncTestDataset({ force = false } = {}) {
 }
 
 function getPackLabel(packId) {
+  const weaknessPractice = getActiveWeaknessPractice(packId);
+  if (weaknessPractice) return weaknessPractice.label;
   return QUIZ_PACKS.find((pack) => pack.id === packId)?.label || '퀴즈팩';
 }
 
@@ -2332,6 +2600,8 @@ function normalizeJsonQuestions(payload) {
 }
 
 async function loadPack(packId) {
+  const weaknessPractice = getActiveWeaknessPractice(packId);
+  if (weaknessPractice?.questions?.length) return weaknessPractice.questions;
   if (packCache.has(packId)) return packCache.get(packId);
   const pack = QUIZ_PACKS.find((item) => item.id === packId);
   if (!pack) throw new Error('퀴즈팩을 찾을 수 없습니다.');
@@ -2508,6 +2778,7 @@ function createRuntimePlayers(count, runtimeMap, summary, characters = []) {
 
 function buildSession({ questions, mapBundle, characters: runtimeCharacters = null }) {
   const startedAt = new Date();
+  const weaknessPractice = getActiveWeaknessPractice(selectedPackId);
   const runtimeMap = mapBundle.map;
   const summary = mapBundle.summary;
   const objects = getRuntimeObjects(runtimeMap);
@@ -2523,7 +2794,17 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
 
   return {
     packId: selectedPackId,
-    packLabel: getPackLabel(selectedPackId),
+    packLabel: weaknessPractice?.label || getPackLabel(selectedPackId),
+    practiceMode: weaknessPractice ? {
+      type: 'weakness',
+      recordType: weaknessPractice.recordType,
+      fileName: weaknessPractice.fileName,
+      studentText: weaknessPractice.studentText,
+      weakCount: weaknessPractice.weakCount,
+      dangerCount: weaknessPractice.dangerCount,
+      warningCount: weaknessPractice.warningCount,
+      stableCount: weaknessPractice.stableCount
+    } : null,
     mapId: selectedMapId,
     mapLabel: mapBundle.config.label,
     minutes: selectedMinutes,
@@ -4260,8 +4541,9 @@ async function startSelectedGame() {
     return;
   }
   startBgm();
+  const weaknessPractice = getActiveWeaknessPractice(selectedPackId);
   const loadingCharacterPreview = getLoadingCharacterFromSelection();
-  setStartLoadingState(true, '게임 자료를 미리 불러오는 중입니다.', {
+  setStartLoadingState(true, weaknessPractice ? '취약점 연습 문제와 게임 자료를 준비하는 중입니다.' : '게임 자료를 미리 불러오는 중입니다.', {
     progress: 0.14,
     character: loadingCharacterPreview
   });
@@ -4340,7 +4622,11 @@ function renderResult() {
   const profile = syncViewportProfile();
   const totalAttempts = summary.totalCorrect + summary.totalWrong;
   const accuracy = totalAttempts > 0 ? Math.round((summary.totalCorrect / totalAttempts) * 100) : 0;
-  elements.resultTitle.textContent = '점프 결과';
+  const isMultiPlayerResult = session.players.length > 1;
+  const resultModal = elements.resultScreen?.querySelector('.result-modal');
+  resultModal?.classList.toggle('is-single-result', !isMultiPlayerResult);
+  resultModal?.classList.toggle('is-split-result', isMultiPlayerResult);
+  elements.resultTitle.textContent = isMultiPlayerResult ? '사용자별 점프 결과' : '점프 결과';
   elements.resultSubtitle.textContent = `퀴즈 ${session.packLabel} · ${session.mapLabel} · ${getPlayerCountLabel(session.players.length, profile)} · ${formatClock(summary.playedSec)}`;
   elements.resultTimePill.textContent = '결과';
   elements.resultGrid.innerHTML = `
@@ -4386,6 +4672,7 @@ function renderResult() {
       </dl>
     </div>
   ` : '';
+  resultModal?.classList.toggle('is-face-result', Boolean(faceResultCenterHtml));
 
   elements.playerResults.className = `player-results player-count-${session.players.length}${faceResultCenterHtml ? ' has-face-result-center' : ''}`;
   elements.playerResults.innerHTML = `
@@ -4398,12 +4685,12 @@ function renderResult() {
     const heightGrade = getHeightGrade(player.bestHeight);
     const heightTitle = getHeightTitleForPlayer(player, heightGrade);
     return `
-    <div class="player-result-card" data-result-player="${index}" style="--player-color: ${escapeHtml(player.labelColor)}">
+    <div class="player-result-card${rank === 1 ? ' is-top-rank' : ''}" data-result-player="${index}" style="--player-color: ${escapeHtml(player.labelColor)}">
       <div class="player-result-content">
         <div class="player-card-head">
           <span>${escapeHtml(player.name)}</span>
           <strong>${escapeHtml(player.character?.label || '캐릭터')}</strong>
-          <em>개인 결과</em>
+          <em>높이 ${rank}위</em>
         </div>
         <div class="player-result-hero">
           <div class="player-title-panel" data-grade-key="${escapeHtml(heightGrade.imageKey)}" aria-label="칭호 ${escapeHtml(heightTitle.title)}">
@@ -4419,7 +4706,7 @@ function renderResult() {
           <div class="player-height-panel">
             <span>최고 높이</span>
             <strong>${escapeHtml(formatHeightMeters(player.bestHeight))}</strong>
-            <em>높이 ${rank}위</em>
+            <em>${escapeHtml(heightGrade.rangeLabel)}</em>
           </div>
         </div>
         <div class="player-support-line">
@@ -4520,6 +4807,7 @@ function bindEvents() {
 
   elements.quizPack.addEventListener('change', () => {
     selectedPackId = elements.quizPack.value;
+    clearWeaknessPractice('취약점 연습을 해제했습니다. 선택한 퀴즈팩으로 시작합니다.');
     updateSetupSummary();
   });
 
@@ -4533,6 +4821,9 @@ function bindEvents() {
     if (!button || button.disabled) return;
     const profile = syncViewportProfile();
     selectedPlayers = clamp(Number(button.dataset.players) || 1, 1, profile.maxPlayers);
+    if (activeWeaknessPractice && selectedPlayers !== 1) {
+      clearWeaknessPractice('취약점 연습은 1인 전용입니다. 사용자 수를 바꿔 취약점 연습을 해제했습니다.');
+    }
     ensureCharacterSelections(selectedPlayers);
     updateSetupSummary();
   });
@@ -4581,6 +4872,14 @@ function bindEvents() {
   elements.gugudanMergeRecordsFile?.addEventListener('change', () => {
     mergeSelectedGugudanRecordFiles(elements.gugudanMergeRecordsFile.files, 'gugudan');
   });
+  elements.gugudanWeaknessPracticeButton?.addEventListener('click', () => {
+    if (!elements.gugudanWeaknessPracticeFile) return;
+    elements.gugudanWeaknessPracticeFile.value = '';
+    elements.gugudanWeaknessPracticeFile.click();
+  });
+  elements.gugudanWeaknessPracticeFile?.addEventListener('change', () => {
+    prepareWeaknessPracticeFromFile(elements.gugudanWeaknessPracticeFile.files?.[0], 'gugudan');
+  });
   elements.divisionGugudanMergeRecordsButton?.addEventListener('click', () => {
     if (!elements.divisionGugudanMergeRecordsFile) return;
     elements.divisionGugudanMergeRecordsFile.value = '';
@@ -4588,6 +4887,14 @@ function bindEvents() {
   });
   elements.divisionGugudanMergeRecordsFile?.addEventListener('change', () => {
     mergeSelectedGugudanRecordFiles(elements.divisionGugudanMergeRecordsFile.files, 'division-gugudan');
+  });
+  elements.divisionGugudanWeaknessPracticeButton?.addEventListener('click', () => {
+    if (!elements.divisionGugudanWeaknessPracticeFile) return;
+    elements.divisionGugudanWeaknessPracticeFile.value = '';
+    elements.divisionGugudanWeaknessPracticeFile.click();
+  });
+  elements.divisionGugudanWeaknessPracticeFile?.addEventListener('change', () => {
+    prepareWeaknessPracticeFromFile(elements.divisionGugudanWeaknessPracticeFile.files?.[0], 'division-gugudan');
   });
   elements.gugudanDownloadCurrentButton?.addEventListener('click', downloadCurrentGugudanCsv);
   elements.gugudanMergeCsvButton?.addEventListener('click', () => {
