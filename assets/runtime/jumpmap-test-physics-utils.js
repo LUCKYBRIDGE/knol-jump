@@ -26,6 +26,7 @@
   const MAX_SLOPE_PROFILE_ROWS = 24;
   const COYOTE_TIME_SEC = 0.12;
   const OBSTACLE_CELL_SIZE = 96;
+  const GROUND_SNAP_CACHE_LIMIT = 320;
 
   const createPlayerState = () => ({
     x: 0,
@@ -104,6 +105,31 @@
     return candidates;
   };
 
+  const buildObstacleTopEdges = (points, edgeSlip = null) => {
+    if (!Array.isArray(points) || points.length < 3) return [];
+    const slips = Array.isArray(edgeSlip) ? edgeSlip : null;
+    const edges = [];
+    for (let i = 0; i < points.length; i += 1) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      const dx = (Number(b?.x) || 0) - (Number(a?.x) || 0);
+      if (Math.abs(dx) <= EPS) continue;
+      const dy = (Number(b?.y) || 0) - (Number(a?.y) || 0);
+      edges.push({
+        a,
+        b,
+        edgeIndex: i,
+        minX: Math.min(a.x, b.x),
+        maxX: Math.max(a.x, b.x),
+        dx,
+        dy,
+        slope: dy / dx,
+        edgeSlipEnabled: slips ? slips[i] !== false : true
+      });
+    }
+    return edges;
+  };
+
   const collectObstacleBounds = ({ objects, localPointToWorld }) => {
     const bounds = [];
     objects.forEach((obj) => {
@@ -131,6 +157,7 @@
               : null;
             bounds.push({
               points: corners,
+              topEdges: buildObstacleTopEdges(corners, edgeSlip),
               surfaceKind,
               ...(edgeSlip ? { edgeSlip } : {}),
               x1: Math.min(...xs),
@@ -172,6 +199,7 @@
         const ys = corners.map((p) => p.y);
         bounds.push({
           points: corners,
+          topEdges: buildObstacleTopEdges(corners),
           surfaceKind,
           x1: Math.min(...xs),
           y1: Math.min(...ys),
@@ -199,6 +227,9 @@
   ]);
 
   const normalizePlayerHitboxPolygon = (polygon) => {
+    if (polygon?.normalized === true && Array.isArray(polygon.points) && polygon.points.length >= 3) {
+      return polygon;
+    }
     const source = Array.isArray(polygon?.points)
       ? polygon.points
       : (Array.isArray(polygon) ? polygon : null);
@@ -214,7 +245,7 @@
         y: Math.max(0, Math.min(1, point.y))
       }));
     if (points.length < 3) return null;
-    return { points };
+    return { points, normalized: true };
   };
 
   const buildPlayerPolygonAt = (x, y, width, height, playerHitboxPolygon = null) => {
@@ -556,33 +587,27 @@
       ? Math.max(0, Number(options.endpointMarginPx))
       : 0;
     const candidates = [];
-    for (let i = 0; i < points.length; i += 1) {
-      const a = points[i];
-      const b = points[(i + 1) % points.length];
-      const minX = Math.min(a.x, b.x);
-      const maxX = Math.max(a.x, b.x);
-      if (x < minX - EPS || x > maxX + EPS) continue;
-      const dx = b.x - a.x;
-      if (Math.abs(dx) <= EPS) {
-        // Vertical edge should never be treated as a "walkable top".
-        continue;
-      }
-      const t = (x - a.x) / dx;
+    const topEdges = Array.isArray(options?.topEdges)
+      ? options.topEdges
+      : buildObstacleTopEdges(points, edgeSlip);
+    for (const edge of topEdges) {
+      if (x < edge.minX - EPS || x > edge.maxX + EPS) continue;
+      const t = (x - edge.a.x) / edge.dx;
       if (t < -EPS || t > 1 + EPS) continue;
       const endpointMarginT = endpointMarginPx > EPS
-        ? Math.min(0.49, endpointMarginPx / Math.abs(dx))
+        ? Math.min(0.49, endpointMarginPx / Math.abs(edge.dx))
         : 0;
       if (endpointMarginT > EPS && (t <= endpointMarginT || t >= 1 - endpointMarginT)) {
         // Ignore segment endpoints to avoid hanging on corner-only contact.
         continue;
       }
-      const slope = (b.y - a.y) / dx;
+      const slope = edge.slope;
       if (Number.isFinite(maxAbsSlope) && Math.abs(slope) > maxAbsSlope + EPS) continue;
       candidates.push({
-        y: a.y + (b.y - a.y) * t,
-        edgeIndex: i,
+        y: edge.a.y + edge.dy * t,
+        edgeIndex: edge.edgeIndex,
         slope,
-        edgeSlipEnabled: Array.isArray(edgeSlip) ? edgeSlip[i] !== false : true
+        edgeSlipEnabled: edge.edgeSlipEnabled
       });
     }
     if (!candidates.length) return null;
@@ -605,6 +630,48 @@
     return hit ? hit.y : null;
   };
 
+  const getGroundSnapCacheStore = (obstacles) => {
+    if (!obstacles || Array.isArray(obstacles)) return null;
+    if (!(obstacles._groundSnapCacheLegacy instanceof Map)) {
+      obstacles._groundSnapCacheLegacy = new Map();
+    }
+    return obstacles._groundSnapCacheLegacy;
+  };
+
+  const getPlayerHitboxPolygonCacheKey = (polygon) => {
+    const normalized = normalizePlayerHitboxPolygon(polygon);
+    if (!normalized) return 'rect';
+    return normalized.points.map((point) => `${point.x},${point.y}`).join(';');
+  };
+
+  const getGroundSnapCacheKey = (x, y, width, height, options = {}) => ([
+    Number(x) || 0,
+    Number(y) || 0,
+    Number(width) || 0,
+    Number(height) || 0,
+    Math.max(0, Number(options.maxUp) || 0),
+    Math.max(0, Number(options.maxDown) || 0),
+    Number(options.direction) || 0,
+    normalizeGroundSampleSpacing(options.sampleSpacing),
+    Number.isFinite(Number(options.maxGroundAngle)) ? Number(options.maxGroundAngle) : '',
+    Number.isFinite(Number(options.endpointMarginPx)) ? Number(options.endpointMarginPx) : '',
+    Number.isFinite(Number(options.minSupportSamples)) ? Number(options.minSupportSamples) : '',
+    Number.isFinite(Number(options.minSupportSpanPx)) ? Number(options.minSupportSpanPx) : '',
+    Number.isFinite(Number(options.supportYTolerance)) ? Number(options.supportYTolerance) : '',
+    options.includeHit ? 1 : 0,
+    getPlayerHitboxPolygonCacheKey(options.playerHitboxPolygon)
+  ]).join('|');
+
+  const rememberGroundSnapCache = (cache, key, value) => {
+    if (!cache || !key) return value;
+    cache.set(key, value);
+    if (cache.size > GROUND_SNAP_CACHE_LIMIT) {
+      const firstKey = cache.keys().next().value;
+      cache.delete(firstKey);
+    }
+    return value;
+  };
+
   const collidesAt = (x, y, width, height, obstacles, playerHitboxPolygon = null) => {
     const playerPoly = buildPlayerPolygonAt(x, y, width, height, playerHitboxPolygon);
     const playerBounds = getPolygonBounds(playerPoly) || { x1: x, y1: y, x2: x + width, y2: y + height, w: width, h: height };
@@ -623,6 +690,9 @@
   };
 
   const findGroundSnapTopY = (x, y, width, height, obstacles, options = {}) => {
+    const cache = getGroundSnapCacheStore(obstacles);
+    const cacheKey = cache ? getGroundSnapCacheKey(x, y, width, height, options) : '';
+    if (cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
     const maxUp = Math.max(0, Number(options.maxUp) || 0);
     const maxDown = Math.max(0, Number(options.maxDown) || 0);
     const direction = Number(options.direction) || 0;
@@ -657,7 +727,8 @@
         if (sampleX < box.x1 - EPS || sampleX > box.x2 + EPS) continue;
         const topHit = getPolygonTopHitAtX(box.points, sampleX, box.edgeSlip, {
           maxAbsSlope,
-          endpointMarginPx
+          endpointMarginPx,
+          topEdges: box.topEdges
         });
         if (!topHit) continue;
         const candidateY = topHit.y - height;
@@ -731,12 +802,12 @@
       }
     }
     if (options.includeHit) {
-      return {
+      return rememberGroundSnapCache(cache, cacheKey, {
         y: bestY,
         hit: bestHit
-      };
+      });
     }
-    return bestY;
+    return rememberGroundSnapCache(cache, cacheKey, bestY);
   };
 
   const estimateGroundSlope = ({

@@ -1265,6 +1265,8 @@ select {
 .ghost-action {
   border-radius: var(--radius);
   font-weight: 900;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .option-button,
@@ -1276,11 +1278,42 @@ select {
   color: var(--ink);
 }
 
+.option-button {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  line-height: 1.1;
+}
+
+.option-button-main,
+.option-button-note {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-button-main {
+  font-size: 14px;
+}
+
+.option-button-note {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+}
+
 .option-button.is-selected,
 .character-button.is-selected {
   color: #ffffff;
   border-color: var(--primary);
   background: var(--primary);
+}
+
+.option-button.is-selected .option-button-note {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .option-button:disabled,
@@ -1961,11 +1994,13 @@ select {
 }
 
 .touch-button {
+  position: relative;
   pointer-events: auto;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   width: clamp(50px, 5.2vw, 62px);
   min-height: 50px;
   border: 2px solid rgba(20, 32, 47, 0.28);
@@ -1975,6 +2010,12 @@ select {
   box-shadow: 0 3px 0 rgba(20, 32, 47, 0.24);
   font-weight: 900;
   font-size: 18px;
+}
+
+.touch-button::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
 
 .touch-jump {
@@ -2474,6 +2515,8 @@ select {
   border-color: rgba(30, 41, 59, 0.12);
   background: #ffffff;
   padding: 7px;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .result-tile.is-time {
@@ -2482,6 +2525,12 @@ select {
 
 .result-tile span {
   font-size: clamp(15px, 1.5vw, 20px);
+  white-space: nowrap;
+}
+
+.result-tile b {
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .player-results {
@@ -2585,7 +2634,10 @@ select {
   min-width: 0;
   color: #102033;
   font-size: clamp(15px, 1.25vw, 20px);
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-result-hero {
@@ -2644,7 +2696,8 @@ select {
 .player-height-panel em {
   min-width: 0;
   display: block;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .player-title-panel strong {
@@ -2661,6 +2714,7 @@ select {
   font-size: clamp(36px, 4vw, 58px);
   line-height: 0.95;
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .player-title-panel em,
@@ -2671,6 +2725,8 @@ select {
   font-style: normal;
   font-weight: 900;
   line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .player-results.player-count-3 .player-title-panel,
@@ -2690,15 +2746,22 @@ select {
   white-space: nowrap;
 }
 
+.player-results.player-count-3 .player-title-panel > div:last-child,
+.player-results.player-count-4 .player-title-panel > div:last-child {
+  width: 100%;
+  justify-items: center;
+}
+
 .player-support-line {
   min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .player-support-line span {
-  min-width: 0;
+  min-width: min(100%, 112px);
+  flex: 1 1 112px;
   border: 1px solid rgba(30, 41, 59, 0.1);
   border-radius: 10px;
   background: #ffffff;
@@ -2707,7 +2770,10 @@ select {
   font-size: 11px;
   font-weight: 900;
   line-height: 1.15;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-support-line b {
@@ -2715,6 +2781,9 @@ select {
   margin-top: 2px;
   color: #0f172a;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-card-session {
@@ -2759,7 +2828,8 @@ select {
   color: #334155;
   font-size: 12px;
   font-weight: 900;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: normal;
   line-height: 1.18;
 }
 
@@ -2824,7 +2894,8 @@ select {
 .player-grade-badge em {
   min-width: 0;
   display: block;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .player-grade-badge > div:last-child > span {
@@ -2847,7 +2918,7 @@ select {
   font-size: clamp(16px, 1.45vw, 24px);
   line-height: 1.08;
   word-break: keep-all;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 .player-grade-badge em {
@@ -2899,6 +2970,11 @@ select {
     width: clamp(42px, 4.5vw, 54px);
   }
 
+  body[data-screen="result"] .player-title-panel > div:last-child {
+    width: 100%;
+    justify-items: center;
+  }
+
   body[data-screen="result"] .player-title-panel strong {
     font-size: clamp(16px, 2.1vw, 21px);
   }
@@ -2916,7 +2992,8 @@ select {
   padding: 8px 10px;
   font-size: clamp(13px, 1vw, 16px);
   font-weight: 900;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: normal;
   display: grid;
   gap: 3px;
 }
@@ -2967,13 +3044,15 @@ select {
 .player-card-main b,
 .player-card-main span {
   display: block;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .player-card-main b {
   color: #0d47a1;
   font-size: clamp(17px, 2vw, 30px);
   line-height: 1;
+  white-space: nowrap;
 }
 
 .player-card-main span {
@@ -2981,6 +3060,9 @@ select {
   color: var(--muted);
   font-size: clamp(11px, 0.85vw, 13px);
   font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-height-meter,
@@ -3661,6 +3743,53 @@ select {
   }
 }
 
+@media (max-width: 720px) {
+  .map-view-grid.player-count-2 .touch-controls,
+  .map-view-grid.player-count-3 .touch-controls,
+  .map-view-grid.player-count-4 .touch-controls {
+    left: 4px;
+    bottom: 4px;
+    width: 82px;
+    display: grid;
+    grid-template-columns: repeat(2, 36px);
+    align-items: end;
+    column-gap: 10px;
+    row-gap: 10px;
+  }
+
+  .map-view-grid.player-count-2 .touch-button,
+  .map-view-grid.player-count-3 .touch-button,
+  .map-view-grid.player-count-4 .touch-button {
+    width: 36px;
+    min-height: 38px;
+    border-width: 1px;
+    font-size: 13px;
+  }
+
+  .map-view-grid.player-count-2 .touch-jump,
+  .map-view-grid.player-count-3 .touch-jump,
+  .map-view-grid.player-count-4 .touch-jump {
+    grid-column: 1 / -1;
+    width: 82px;
+    min-height: 38px;
+    margin-left: 0;
+    font-size: 12px;
+  }
+
+  .map-view-grid.player-count-2 .quiz-map-button,
+  .map-view-grid.player-count-3 .quiz-map-button,
+  .map-view-grid.player-count-4 .quiz-map-button {
+    right: 4px;
+    bottom: 92px;
+    min-width: 54px;
+    min-height: 36px;
+    padding-inline: 4px;
+    font-size: 9px;
+    line-height: 1.05;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 430px) {
   .topbar {
     gap: 8px;
@@ -3728,12 +3857,12 @@ select {
   .map-view-grid.player-count-4 .touch-controls {
     left: 4px;
     bottom: 4px;
-    width: 52px;
+    width: 82px;
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, 36px);
     align-items: end;
-    column-gap: 8px;
-    row-gap: 16px;
+    column-gap: 10px;
+    row-gap: 10px;
   }
 
   .touch-button {
@@ -3744,10 +3873,10 @@ select {
   .map-view-grid.player-count-2 .touch-button,
   .map-view-grid.player-count-3 .touch-button,
   .map-view-grid.player-count-4 .touch-button {
-    width: 24px;
-    min-height: 30px;
+    width: 36px;
+    min-height: 38px;
     border-width: 1px;
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .touch-jump {
@@ -3760,10 +3889,10 @@ select {
   .map-view-grid.player-count-3 .touch-jump,
   .map-view-grid.player-count-4 .touch-jump {
     grid-column: 1 / -1;
-    width: 52px;
-    min-height: 32px;
+    width: 82px;
+    min-height: 38px;
     margin-left: 0;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .quiz-card {
@@ -3794,9 +3923,9 @@ select {
   .map-view-grid.player-count-3 .quiz-map-button,
   .map-view-grid.player-count-4 .quiz-map-button {
     right: 4px;
-    bottom: 4px;
-    min-width: 44px;
-    min-height: 34px;
+    bottom: 92px;
+    min-width: 54px;
+    min-height: 36px;
     padding-inline: 4px;
     font-size: 9px;
     line-height: 1.05;
@@ -5073,4 +5202,35 @@ body[data-screen="result"] .result-modal.has-gugudan-record:not(.is-face-result)
 body[data-screen="result"][data-viewport-class="tablet"][data-viewport-orientation="portrait"] .result-modal.has-gugudan-record:not(.is-face-result) {
   height: auto;
   max-height: calc(100dvh - 24px);
+}
+
+@media (max-width: 820px) {
+  body[data-screen="result"] .player-results.player-count-3 .player-title-panel,
+  body[data-screen="result"] .player-results.player-count-4 .player-title-panel,
+  body[data-screen="result"][data-display-mode="wide"] .player-results.player-count-3 .player-title-panel,
+  body[data-screen="result"][data-display-mode="wide"] .player-results.player-count-4 .player-title-panel,
+  body[data-screen="result"] .result-modal.has-gugudan-record:not(.is-face-result) .player-results.player-count-3 .player-title-panel,
+  body[data-screen="result"] .result-modal.has-gugudan-record:not(.is-face-result) .player-results.player-count-4 .player-title-panel {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: center;
+  }
+
+  body[data-screen="result"] .player-results.player-count-3 .player-title-panel > div:last-child,
+  body[data-screen="result"] .player-results.player-count-4 .player-title-panel > div:last-child,
+  body[data-screen="result"][data-display-mode="wide"] .player-results.player-count-3 .player-title-panel > div:last-child,
+  body[data-screen="result"][data-display-mode="wide"] .player-results.player-count-4 .player-title-panel > div:last-child,
+  body[data-screen="result"] .result-modal.has-gugudan-record:not(.is-face-result) .player-results.player-count-3 .player-title-panel > div:last-child,
+  body[data-screen="result"] .result-modal.has-gugudan-record:not(.is-face-result) .player-results.player-count-4 .player-title-panel > div:last-child {
+    width: 100%;
+    justify-items: center;
+  }
+
+  body[data-screen="result"] .player-results.player-count-3 .player-title-panel .grade-badge-mark,
+  body[data-screen="result"] .player-results.player-count-4 .player-title-panel .grade-badge-mark,
+  body[data-screen="result"][data-display-mode="wide"] .player-results.player-count-3 .player-title-panel .grade-badge-mark,
+  body[data-screen="result"][data-display-mode="wide"] .player-results.player-count-4 .player-title-panel .grade-badge-mark {
+    width: clamp(42px, 12vw, 54px);
+    max-width: 54px;
+  }
 }

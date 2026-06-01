@@ -1,6 +1,6 @@
-import './assets/runtime/jumpmap-test-physics-utils.js';
-import { JumpmapRuntimeGeometry } from './assets/runtime/jumpmap-runtime-geometry.js';
-import { JumpmapRuntimePhysics } from './assets/runtime/jumpmap-runtime-physics.js';
+import './assets/runtime/jumpmap-test-physics-utils.js?v=20260601-physics-cache';
+import { JumpmapRuntimeGeometry } from './assets/runtime/jumpmap-runtime-geometry.js?v=20260601-physics-cache';
+import { JumpmapRuntimePhysics } from './assets/runtime/jumpmap-runtime-physics.js?v=20260601-physics-cache';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -55,12 +55,15 @@ const QUIZ_ACTION_UPDATE_INTERVAL_MS = 90;
 const TEST_DATASET_SYNC_INTERVAL_MS = 250;
 const MAP_OBJECT_DRAW_BIN_SIZE = 520;
 const MAP_OBJECT_CHUNK_SIZE = 512;
-const MAP_OBJECT_CHUNK_CACHE_LIMIT = 32;
+const MAP_OBJECT_CHUNK_CACHE_LIMIT = 96;
 const MAP_OBJECT_CHUNK_MAX_PROJECTOR_SCALE = 1.08;
 const MAP_OBJECT_CHUNK_PREPARE_BUDGET_MS = 5;
 const MAP_OBJECT_CHUNK_QUEUE_LIMIT = 72;
 const MAP_OBJECT_CHUNK_AHEAD_WIDTH = 2200;
 const MAP_OBJECT_CHUNK_AHEAD_HEIGHT = 3600;
+const MAP_OBJECT_PREWARM_WIDTH = 3200;
+const MAP_OBJECT_PREWARM_ABOVE = 5600;
+const MAP_OBJECT_PREWARM_BELOW = 900;
 const RENDER_SCALE_MIN = 0.72;
 const RENDER_SCALE_MAX = 1;
 const RENDER_SCALE_DROP_STEP = 0.1;
@@ -991,6 +994,21 @@ function getPlayerCountLabel(count, profile) {
   const safeCount = clamp(Math.round(Number(count) || 1), 1, Math.max(...PLAYER_COUNTS));
   if (safeCount === 2 && profile?.kind === 'tablet') return '2명(마주보기)';
   return `${safeCount}명`;
+}
+
+function getPlayerCountHint(count, profile) {
+  const safeCount = clamp(Math.round(Number(count) || 1), 1, Math.max(...PLAYER_COUNTS));
+  if (profile?.kind === 'wide' && safeCount >= 3) return '기기성능, 화면크기 필요';
+  return '';
+}
+
+function renderPlayerCountButtonLabel(count, profile) {
+  const label = getPlayerCountLabel(count, profile);
+  const hint = getPlayerCountHint(count, profile);
+  return `
+    <span class="option-button-main">${escapeHtml(label)}</span>
+    ${hint ? `<span class="option-button-note">${escapeHtml(hint)}</span>` : ''}
+  `;
 }
 
 function syncViewportProfile() {
@@ -2521,8 +2539,11 @@ function updateSetupSummary() {
     button.classList.toggle('is-selected', selected);
     button.setAttribute('aria-pressed', String(selected));
     button.setAttribute('aria-disabled', String(disabled));
-    button.title = disabled ? getPlayerLimitLabel(profile) : '';
-    button.textContent = getPlayerCountLabel(count, profile);
+    const hint = getPlayerCountHint(count, profile);
+    const label = getPlayerCountLabel(count, profile);
+    button.title = disabled ? getPlayerLimitLabel(profile) : hint;
+    button.setAttribute('aria-label', hint ? `${label}, ${hint}` : label);
+    button.innerHTML = renderPlayerCountButtonLabel(count, profile);
   });
   elements.timeOptions.value = selectedMinutes ? String(selectedMinutes) : '';
   $$('[data-character-player][data-character]', elements.characterOptions).forEach((button) => {
@@ -2584,9 +2605,10 @@ function renderSetupControls() {
         `<button class="option-button ${disabled ? 'is-disabled' : ''}" type="button" data-players="${count}"
           aria-pressed="${count === selectedPlayers && !disabled}"
           aria-disabled="${disabled}"
-          title="${disabled ? escapeHtml(getPlayerLimitLabel(profile)) : ''}"
+          aria-label="${escapeHtml(getPlayerCountHint(count, profile) ? `${getPlayerCountLabel(count, profile)}, ${getPlayerCountHint(count, profile)}` : getPlayerCountLabel(count, profile))}"
+          title="${disabled ? escapeHtml(getPlayerLimitLabel(profile)) : escapeHtml(getPlayerCountHint(count, profile))}"
           ${disabled ? 'disabled' : ''}>
-        ${escapeHtml(getPlayerCountLabel(count, profile))}
+        ${renderPlayerCountButtonLabel(count, profile)}
       </button>`
       );
     })
@@ -2713,7 +2735,11 @@ async function loadMap(mapId) {
   if (!summary || !summary.objectCount || !summary.hitboxCount) {
     throw new Error(`${config.label}에 사용할 발판 정보가 없습니다.`);
   }
-  const value = { config, map, summary };
+  const obstacles = JumpmapRuntimePhysics.collectObstacleBounds({
+    objects: Array.isArray(map.objects) ? map.objects : [],
+    localPointToWorld: JumpmapRuntimeGeometry.localPointToWorld
+  });
+  const value = { config, map, summary, obstacles };
   mapCache.set(mapId, value);
   return value;
 }
@@ -2931,7 +2957,7 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
   const characters = Array.isArray(runtimeCharacters)
     ? runtimeCharacters
     : getSelectedCharacters(selectedPlayers);
-  const obstacles = JumpmapRuntimePhysics.collectObstacleBounds({
+  const obstacles = mapBundle.obstacles || JumpmapRuntimePhysics.collectObstacleBounds({
     objects: Array.isArray(runtimeMap.objects) ? runtimeMap.objects : [],
     localPointToWorld: JumpmapRuntimeGeometry.localPointToWorld
   });
@@ -3021,8 +3047,10 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
         stableStartedAt: 0
       },
       lastSceneRenderSignature: '',
+      lastViewportRenderSignatures: [],
       backgroundCache: new Map(),
       touchPointers: new Map(),
+      touchActionCounts: new Map(),
       touchButtonCounts: new WeakMap(),
       lastUiUpdateAt: 0,
       lastQuizActionUpdateAt: 0,
@@ -3515,6 +3543,7 @@ function renderStageShell() {
   session.runtime.canvas = session.runtime.canvases[session.activePlayerIndex] || session.runtime.canvases[0] || null;
   session.runtime.ctx = session.runtime.contexts[session.activePlayerIndex] || session.runtime.contexts[0] || null;
   session.runtime.canvasSizeDirty = true;
+  session.runtime.lastViewportRenderSignatures = [];
   collectStageUiRefs();
   bindGaugeButton();
   bindPlayerSelectors();
@@ -3760,6 +3789,8 @@ function resetRenderCaches(runtime = session?.runtime) {
   runtime.canvasSizeDirty = true;
   runtime.canvasSizeCache = new WeakMap();
   runtime.backgroundCache?.clear?.();
+  runtime.lastSceneRenderSignature = '';
+  runtime.lastViewportRenderSignatures = [];
 }
 
 function setRuntimeRenderScale(nextScale) {
@@ -4098,22 +4129,15 @@ async function prewarmMapObjectChunks(runtime, players, options = {}) {
   players.forEach((player) => {
     const state = player?.state;
     if (!state) return;
+    const playerX = Number(state.x) || 0;
+    const playerY = Number(state.y) || 0;
     const cull = {
-      x: (Number(state.x) || 0) - 900,
-      y: (Number(state.y) || 0) - 1500,
-      width: 1800,
-      height: 2300
+      x: playerX - MAP_OBJECT_PREWARM_WIDTH * 0.5,
+      y: playerY - MAP_OBJECT_PREWARM_ABOVE,
+      width: MAP_OBJECT_PREWARM_WIDTH,
+      height: MAP_OBJECT_PREWARM_ABOVE + MAP_OBJECT_PREWARM_BELOW
     };
-    const startCol = Math.floor(cull.x / MAP_OBJECT_CHUNK_SIZE);
-    const endCol = Math.floor((cull.x + cull.width) / MAP_OBJECT_CHUNK_SIZE);
-    const startRow = Math.floor(cull.y / MAP_OBJECT_CHUNK_SIZE);
-    const endRow = Math.floor((cull.y + cull.height) / MAP_OBJECT_CHUNK_SIZE);
-    for (let row = startRow; row <= endRow; row += 1) {
-      for (let col = startCol; col <= endCol; col += 1) {
-        const key = `${col},${row}`;
-        if (runtime.objectChunkIndex.has(key)) chunkKeys.add(key);
-      }
-    }
+    getMapObjectChunkKeysForCull(runtime, cull).forEach((key) => chunkKeys.add(key));
   });
   let warmed = 0;
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
@@ -4599,17 +4623,61 @@ function getPlayerRenderSignature(player, now = performance.now()) {
   ].join(':');
 }
 
-function getSceneRenderSignature(now = performance.now()) {
+function getPlayerRenderSignatures(now = performance.now()) {
+  if (!session?.players?.length) return [];
+  return session.players.map((player) => getPlayerRenderSignature(player, now));
+}
+
+function getSceneRenderSignature(now = performance.now(), playerSignatures = null) {
   if (!session?.runtime) return '';
   const runtime = session.runtime;
   const canvasSignature = runtime.canvases
     .map((canvas) => `${canvas?.width || 0}x${canvas?.height || 0}`)
     .join(',');
+  const signatures = Array.isArray(playerSignatures) ? playerSignatures : getPlayerRenderSignatures(now);
   return [
     Number(runtime.renderScale || RENDER_SCALE_MAX).toFixed(2),
     canvasSignature,
     session.activePlayerIndex,
-    session.players.map((player) => getPlayerRenderSignature(player, now)).join('|')
+    signatures.join('|')
+  ].join('||');
+}
+
+function isPlayerVisibleInCamera(player, camera, pad = 240) {
+  const state = player?.state;
+  if (!state || !camera) return false;
+  const metrics = session?.runtime?.metrics || { width: 44, height: 64 };
+  return rectsIntersect({
+    x: (Number(state.x) || 0) - pad,
+    y: (Number(state.y) || 0) - pad,
+    width: (Number(metrics.width) || 44) + pad * 2,
+    height: (Number(metrics.height) || 64) + pad * 2
+  }, camera);
+}
+
+function getViewportRenderSignature(index, size, camera, viewPlayer, now = performance.now(), playerSignatures = null) {
+  if (!session?.runtime || !size || !camera || !viewPlayer) return '';
+  const runtime = session.runtime;
+  const visiblePlayerSignature = session.players
+    .map((player, playerIndex) => {
+      if (player !== viewPlayer && !isPlayerVisibleInCamera(player, camera)) return '';
+      const signature = Array.isArray(playerSignatures)
+        ? playerSignatures[playerIndex]
+        : getPlayerRenderSignature(player, now);
+      return `${playerIndex}:${signature}`;
+    })
+    .filter(Boolean)
+    .join('|');
+  return [
+    index,
+    Number(runtime.renderScale || RENDER_SCALE_MAX).toFixed(2),
+    `${size.width}x${size.height}`,
+    Math.round(camera.x),
+    Math.round(camera.y),
+    Math.round(camera.width),
+    Math.round(camera.height),
+    runtime.debugHitboxes ? 1 : 0,
+    visiblePlayerSignature
   ].join('||');
 }
 
@@ -4617,12 +4685,14 @@ function drawScene({ force = false } = {}) {
   if (!session?.runtime.contexts?.length) return;
   const runtime = session.runtime;
   const now = performance.now();
+  const playerSignatures = getPlayerRenderSignatures(now);
   if (!force && !runtime.canvasSizeDirty) {
-    const nextSignature = getSceneRenderSignature(now);
+    const nextSignature = getSceneRenderSignature(now, playerSignatures);
     if (nextSignature && nextSignature === runtime.lastSceneRenderSignature) return false;
     runtime.lastSceneRenderSignature = nextSignature;
   }
-  resetPlayerViewportScroll();
+  if (force || runtime.canvasSizeDirty) resetPlayerViewportScroll();
+  let drewAnyViewport = false;
   session.runtime.canvases.forEach((canvas, index) => {
     const ctx = runtime.contexts[index];
     const viewPlayer = session.players[index] || getActivePlayer();
@@ -4635,6 +4705,10 @@ function drawScene({ force = false } = {}) {
       runtime.camera = camera;
     }
     const projector = buildProjector(size, camera);
+    const viewportSignature = getViewportRenderSignature(index, size, camera, viewPlayer, now, playerSignatures);
+    if (!force && !runtime.canvasSizeDirty && viewportSignature === runtime.lastViewportRenderSignatures[index]) {
+      return;
+    }
 
     ctx.clearRect(0, 0, size.width, size.height);
     drawBackground(ctx, size);
@@ -4642,10 +4716,12 @@ function drawScene({ force = false } = {}) {
     drawLandingDust(ctx, camera, projector, viewPlayer);
     drawDebugHitboxes(ctx, camera, projector);
     drawPlayers(ctx, camera, projector, viewPlayer);
+    runtime.lastViewportRenderSignatures[index] = viewportSignature;
+    drewAnyViewport = true;
   });
   runtime.canvasSizeDirty = false;
-  runtime.lastSceneRenderSignature = getSceneRenderSignature(now);
-  return true;
+  runtime.lastSceneRenderSignature = getSceneRenderSignature(now, playerSignatures);
+  return drewAnyViewport;
 }
 
 function updateRuntimeUi(timestamp = performance.now(), { force = false } = {}) {
@@ -5050,12 +5126,37 @@ function applyTouchControl(playerIndex, action, active) {
   return false;
 }
 
+function getTouchActionKey(playerIndex, action) {
+  return `${clamp(Math.round(Number(playerIndex) || 0), 0, Math.max(0, (session?.players?.length || 1) - 1))}:${String(action || '')}`;
+}
+
+function setTouchActionActive(playerIndex, action, active) {
+  if (!session?.runtime?.touchActionCounts) return applyTouchControl(playerIndex, action, active);
+  const key = getTouchActionKey(playerIndex, action);
+  const counts = session.runtime.touchActionCounts;
+  const current = Math.max(0, Number(counts.get(key)) || 0);
+  if (active) {
+    if (current === 0 && !applyTouchControl(playerIndex, action, true)) return false;
+    counts.set(key, current + 1);
+    return true;
+  }
+  if (current <= 0) return false;
+  const next = current - 1;
+  if (next > 0) {
+    counts.set(key, next);
+    return true;
+  }
+  counts.delete(key);
+  applyTouchControl(playerIndex, action, false);
+  return true;
+}
+
 function releaseTouchPointer(pointerKey, event = null) {
   if (!session?.runtime?.touchPointers || !pointerKey) return;
   const pointer = session.runtime.touchPointers.get(pointerKey);
   if (!pointer) return;
   session.runtime.touchPointers.delete(pointerKey);
-  applyTouchControl(pointer.playerIndex, pointer.action, false);
+  setTouchActionActive(pointer.playerIndex, pointer.action, false);
   setTouchButtonActive(pointer.button, false);
   if (event?.pointerId != null) {
     try {
@@ -5107,7 +5208,7 @@ function bindTouchControls() {
       keepViewportFixed();
       const pointerKey = getTouchPointerKey(event);
       releaseTouchPointer(pointerKey, event);
-      if (!applyTouchControl(playerIndex, action, true)) return;
+      if (!setTouchActionActive(playerIndex, action, true)) return;
       session.runtime.touchPointers.set(pointerKey, { playerIndex, action, button });
       setTouchButtonActive(button, true);
       try {
@@ -5125,12 +5226,13 @@ function bindTouchControls() {
     const leave = (event) => {
       if (event.pointerType === 'mouse') up(event);
     };
+    const lost = () => keepViewportFixed();
     const prevent = (event) => event.preventDefault();
     button.addEventListener('pointerdown', down);
     button.addEventListener('pointerup', up);
     button.addEventListener('pointercancel', up);
     button.addEventListener('pointerleave', leave);
-    button.addEventListener('lostpointercapture', up);
+    button.addEventListener('lostpointercapture', lost);
     button.addEventListener('focus', keepViewportFixed);
     button.addEventListener('click', keepViewportFixed);
     button.addEventListener('contextmenu', prevent);
@@ -5140,7 +5242,7 @@ function bindTouchControls() {
       button.removeEventListener('pointerup', up);
       button.removeEventListener('pointercancel', up);
       button.removeEventListener('pointerleave', leave);
-      button.removeEventListener('lostpointercapture', up);
+      button.removeEventListener('lostpointercapture', lost);
       button.removeEventListener('focus', keepViewportFixed);
       button.removeEventListener('click', keepViewportFixed);
       button.removeEventListener('contextmenu', prevent);
