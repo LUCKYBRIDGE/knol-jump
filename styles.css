@@ -452,6 +452,345 @@ body.qr-modal-open {
   overflow: hidden;
 }
 
+body.gugudan-report-open {
+  overflow: hidden;
+}
+
+.gugudan-report-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 610;
+  display: grid;
+  place-items: center;
+  padding: clamp(10px, 2vw, 28px);
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+.gugudan-report-card {
+  width: min(1080px, 100%);
+  max-height: min(94dvh, 920px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid rgba(30, 41, 59, 0.16);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 28px 76px rgba(15, 23, 42, 0.34);
+  overflow: hidden;
+}
+
+.gugudan-report-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: clamp(14px, 2vw, 22px);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.26);
+  background: #f8fafc;
+}
+
+.gugudan-report-head h2,
+.gugudan-report-head p,
+.gugudan-report-section h3,
+.gugudan-report-section p {
+  margin: 0;
+}
+
+.gugudan-report-head h2 {
+  color: #0f172a;
+  font-size: clamp(26px, 3vw, 40px);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.gugudan-report-head p {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: clamp(12px, 1.3vw, 15px);
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.gugudan-report-close-button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding-inline: 16px;
+}
+
+.gugudan-report-body {
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(12px, 2vw, 22px);
+  display: grid;
+  gap: clamp(10px, 1.4vw, 16px);
+}
+
+.gugudan-report-hero {
+  border: 1px solid rgba(30, 41, 59, 0.12);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: clamp(14px, 2vw, 22px);
+  display: grid;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.gugudan-report-hero span,
+.gugudan-report-metrics span,
+.gugudan-report-section-head span,
+.gugudan-dan-card span,
+.gugudan-report-note {
+  color: #64748b;
+  font-weight: 900;
+}
+
+.gugudan-report-hero strong {
+  display: block;
+  color: #0f172a;
+  font-size: clamp(30px, 5vw, 56px);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.gugudan-report-hero p {
+  color: #14202f;
+  font-size: clamp(16px, 1.9vw, 22px);
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.gugudan-report-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gugudan-report-metrics div,
+.gugudan-dan-card,
+.gugudan-report-section {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.gugudan-report-metrics div {
+  min-width: 0;
+  padding: 12px;
+}
+
+.gugudan-report-metrics strong {
+  display: inline-block;
+  margin-top: 5px;
+  color: #0f172a;
+  font-size: clamp(24px, 3vw, 36px);
+  line-height: 1;
+}
+
+.gugudan-report-metrics em {
+  margin-left: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.gugudan-report-section {
+  padding: clamp(12px, 1.6vw, 18px);
+  display: grid;
+  gap: 12px;
+}
+
+.gugudan-report-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gugudan-report-section-head h3 {
+  color: #0f172a;
+  font-size: clamp(18px, 2vw, 24px);
+  line-height: 1.1;
+}
+
+.gugudan-weak-list {
+  display: grid;
+  gap: 8px;
+}
+
+.gugudan-report-empty {
+  margin: 0;
+  color: #166534;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.gugudan-weak-row {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 9px;
+  padding: 9px;
+  display: grid;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.gugudan-weak-meta {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.gugudan-weak-meta strong {
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.gugudan-weak-meta span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.gugudan-weak-track {
+  height: 18px;
+  border-radius: 999px;
+  background: #e5edf2;
+  overflow: hidden;
+}
+
+.gugudan-weak-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #d97706;
+}
+
+.gugudan-weak-row.risk-danger .gugudan-weak-track i {
+  background: #dc2626;
+}
+
+.gugudan-weak-row.risk-warning .gugudan-weak-track i {
+  background: #d97706;
+}
+
+.gugudan-dan-strip {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gugudan-dan-card {
+  min-width: 0;
+  padding: 10px 8px;
+  text-align: center;
+  display: grid;
+  gap: 4px;
+}
+
+.gugudan-dan-card b {
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.gugudan-dan-card strong {
+  color: #14202f;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.gugudan-dan-card.risk-ok {
+  background: #ecfdf5;
+  border-color: rgba(22, 163, 74, 0.28);
+}
+
+.gugudan-dan-card.risk-warning {
+  background: #fffbeb;
+  border-color: rgba(217, 119, 6, 0.32);
+}
+
+.gugudan-dan-card.risk-danger {
+  background: #fef2f2;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.gugudan-heatmap {
+  display: grid;
+  grid-template-columns: 30px repeat(9, minmax(52px, 1fr));
+  gap: 5px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.gugudan-heatmap-cell {
+  min-width: 52px;
+  min-height: 46px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  padding: 5px 3px;
+  text-align: center;
+  background: #f8fafc;
+}
+
+.gugudan-heatmap-cell strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.gugudan-heatmap-cell span {
+  color: #475569;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.gugudan-heatmap-cell.is-label {
+  min-width: 30px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  background: transparent;
+  border-color: transparent;
+}
+
+.gugudan-heatmap-cell.level-ok {
+  background: #dcfce7;
+  border-color: rgba(22, 163, 74, 0.32);
+}
+
+.gugudan-heatmap-cell.level-warning {
+  background: #fef3c7;
+  border-color: rgba(217, 119, 6, 0.35);
+}
+
+.gugudan-heatmap-cell.level-danger {
+  background: #fecaca;
+  border-color: rgba(220, 38, 38, 0.38);
+}
+
+.gugudan-heatmap-cell.level-none {
+  background: #f1f5f9;
+  opacity: 0.7;
+}
+
+.gugudan-report-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 @media (max-width: 1540px) {
   .topbar-right,
   .play-status-actions,
@@ -3886,6 +4225,99 @@ body[data-screen="result"][data-display-mode="wide"] .player-results {
     align-items: start;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .gugudan-report-modal {
+    padding: 7px;
+  }
+
+  .gugudan-report-card {
+    width: calc(100vw - 14px);
+    max-height: calc(100dvh - 14px);
+    border-radius: 10px;
+  }
+
+  .gugudan-report-head {
+    padding: 12px;
+    align-items: center;
+  }
+
+  .gugudan-report-head h2 {
+    font-size: 23px;
+  }
+
+  .gugudan-report-head p {
+    font-size: 11px;
+  }
+
+  .gugudan-report-close-button {
+    min-height: 36px;
+    padding-inline: 12px;
+  }
+
+  .gugudan-report-body {
+    padding: 10px;
+    gap: 9px;
+  }
+
+  .gugudan-report-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .gugudan-report-hero strong {
+    font-size: 34px;
+  }
+
+  .gugudan-report-hero p {
+    font-size: 15px;
+  }
+
+  .gugudan-report-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gugudan-report-metrics div {
+    padding: 9px;
+  }
+
+  .gugudan-report-metrics strong {
+    font-size: 26px;
+  }
+
+  .gugudan-report-section {
+    padding: 10px;
+    gap: 9px;
+  }
+
+  .gugudan-report-section-head {
+    display: grid;
+    gap: 3px;
+  }
+
+  .gugudan-report-section-head h3 {
+    font-size: 18px;
+  }
+
+  .gugudan-weak-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .gugudan-dan-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .gugudan-heatmap {
+    grid-template-columns: 24px repeat(9, minmax(42px, 1fr));
+    gap: 4px;
+  }
+
+  .gugudan-heatmap-cell {
+    min-width: 42px;
+    min-height: 38px;
+    padding: 4px 2px;
   }
 }
 

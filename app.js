@@ -74,6 +74,12 @@ const QUIZ_PACKS = [
     path: './assets/quiz/data/gugudan-2to9.csv'
   },
   {
+    id: 'division-gugudan',
+    label: '나눗셈(구구단)',
+    kind: 'csv',
+    path: './assets/quiz/data/division-gugudan-2to9.csv'
+  },
+  {
     id: 'facecolor',
     label: '전개도: 평행한 면',
     kind: 'json',
@@ -92,6 +98,55 @@ const QUIZ_PACKS = [
     path: './assets/quiz/data/validity-questions.json'
   }
 ];
+
+const PRACTICE_RECORD_CONFIGS = Object.freeze({
+  gugudan: Object.freeze({
+    key: 'gugudan',
+    packId: 'gugudan',
+    sourceLabel: '구구단',
+    filenamePrefix: '구구단',
+    statusTitle: '내 구구단 상태',
+    reportTitle: '내 구구단 상태',
+    recordTitle: '구구단 학습 기록 저장',
+    recordUnavailableText: '구구단 1인 플레이 결과에서만 기록을 저장할 수 있습니다.',
+    emptyText: '아직 저장할 구구단 풀이 기록이 없습니다.',
+    missingText: '구구단 학습 기록을 찾을 수 없습니다.',
+    mergeTitle: '구구단 기록 합치기',
+    weakGroupTitle: '많이 틀린 구구단 단수',
+    weakFactTitle: '많이 틀린 곱셈',
+    groupSectionTitle: '단별 상태',
+    groupSectionCaption: '2단부터 9단까지 누적 결과',
+    heatmapTitle: '구구단 지도',
+    heatmapAria: '2단부터 9단까지 구구단 문항별 상태',
+    rowHeader: '×',
+    groupLabel: (item) => `${item.dan}단`,
+    cellLabel: (dan, multiplier) => `${dan}×${multiplier}`,
+    factLabel: (item) => formatGugudanExpression(item.expression)
+  }),
+  'division-gugudan': Object.freeze({
+    key: 'division-gugudan',
+    packId: 'division-gugudan',
+    sourceLabel: '나눗셈(구구단)',
+    filenamePrefix: '나눗셈구구단',
+    statusTitle: '내 나눗셈(구구단) 상태',
+    reportTitle: '내 나눗셈(구구단) 상태',
+    recordTitle: '나눗셈(구구단) 학습 기록 저장',
+    recordUnavailableText: '나눗셈(구구단) 1인 플레이 결과에서만 기록을 저장할 수 있습니다.',
+    emptyText: '아직 저장할 나눗셈 구구단 풀이 기록이 없습니다.',
+    missingText: '나눗셈 구구단 학습 기록을 찾을 수 없습니다.',
+    mergeTitle: '나눗셈 기록 합치기',
+    weakGroupTitle: '많이 틀린 나누는 수',
+    weakFactTitle: '많이 틀린 나눗셈',
+    groupSectionTitle: '나누는 수별 상태',
+    groupSectionCaption: '2부터 9까지 나누는 수 기준 누적 결과',
+    heatmapTitle: '나눗셈 구구단 지도',
+    heatmapAria: '나누는 수 2부터 9까지 나눗셈 문항별 상태',
+    rowHeader: '÷',
+    groupLabel: (item) => `${item.dan}로 나누기`,
+    cellLabel: (divisor, quotient) => `${divisor * quotient}÷${divisor}`,
+    factLabel: (item) => formatGugudanExpression(item.expression)
+  })
+});
 
 const MAPS = [
   {
@@ -313,8 +368,17 @@ const elements = {
   gugudanStatusFile: $('#gugudan-status-file'),
   gugudanMergeRecordsButton: $('#gugudan-merge-records-button'),
   gugudanMergeRecordsFile: $('#gugudan-merge-records-file'),
+  divisionGugudanStatusButton: $('#division-gugudan-status-button'),
+  divisionGugudanStatusFile: $('#division-gugudan-status-file'),
+  divisionGugudanMergeRecordsButton: $('#division-gugudan-merge-records-button'),
+  divisionGugudanMergeRecordsFile: $('#division-gugudan-merge-records-file'),
   gugudanStatusPanel: $('#gugudan-status-panel'),
   gugudanStatusContent: $('#gugudan-status-content'),
+  gugudanReportModal: $('#gugudan-report-modal'),
+  gugudanReportTitle: $('#gugudan-report-title'),
+  gugudanReportCloseButton: $('#gugudan-report-close-button'),
+  gugudanReportSubtitle: $('#gugudan-report-subtitle'),
+  gugudanReportBody: $('#gugudan-report-body'),
   loadingScreen: $('#jump-loading-screen'),
   loadingTitle: $('#jump-loading-title'),
   loadingMessage: $('#jump-loading-message'),
@@ -1036,8 +1100,46 @@ function getSafeStudentId(value) {
     .slice(0, 24);
 }
 
-function getGugudanFact(question) {
+function getPracticeRecordConfig(recordType = 'gugudan') {
+  return PRACTICE_RECORD_CONFIGS[recordType] || PRACTICE_RECORD_CONFIGS.gugudan;
+}
+
+function getPracticeRecordTypeForPack(packId = session?.packId) {
+  return PRACTICE_RECORD_CONFIGS[packId] ? packId : '';
+}
+
+function isPracticeRecordPack(packId = session?.packId) {
+  return Boolean(getPracticeRecordTypeForPack(packId));
+}
+
+function getGugudanFact(question, recordType = 'gugudan') {
   const text = String(question?.text || question?.prompt || '').trim();
+  const config = getPracticeRecordConfig(recordType);
+  if (config.key === 'division-gugudan') {
+    const match = text.match(/(\d+)\s*(?:÷|\/)\s*(\d+)/i);
+    if (!match) return null;
+    const dividend = Number(match[1]);
+    const divisor = Number(match[2]);
+    const quotient = divisor ? dividend / divisor : 0;
+    if (
+      !Number.isFinite(dividend)
+      || !Number.isFinite(divisor)
+      || !Number.isInteger(quotient)
+      || divisor < 2
+      || divisor > 9
+      || quotient < 1
+      || quotient > 9
+    ) {
+      return null;
+    }
+    return {
+      dan: divisor,
+      multiplier: quotient,
+      key: `${divisor}x${quotient}`,
+      expression: `${dividend}÷${divisor}`
+    };
+  }
+
   const match = text.match(/(\d+)\s*(?:x|×|\*)\s*(\d+)/i);
   if (!match) return null;
   const dan = Number(match[1]);
@@ -1079,9 +1181,10 @@ function addGugudanAggregate(map, fact, values = {}) {
   return item;
 }
 
-function createGugudanAggregateFromRecords(records = []) {
+function createGugudanAggregateFromRecords(records = [], recordType = 'gugudan') {
   const factMap = new Map();
   records.forEach((record) => {
+    if (record.recordType && record.recordType !== recordType) return;
     const fact = {
       dan: record.dan,
       multiplier: record.multiplier,
@@ -1098,18 +1201,21 @@ function createGugudanAggregateFromRecords(records = []) {
   return factMap;
 }
 
-function parseGugudanCsvAggregate(text) {
+function parseGugudanCsvAggregate(text, recordType = 'gugudan') {
   const rows = csvRowsToObjects(text);
   const factMap = new Map();
   const studentIds = new Set();
+  const sourceLabels = new Set();
   rows.forEach((row) => {
     const studentId = String(row['학생번호'] || '').trim();
     if (studentId) studentIds.add(studentId);
+    const sourceLabel = String(row['퀴즈팩'] || '').trim();
+    if (sourceLabel) sourceLabels.add(sourceLabel);
     const rowType = String(row['행구분'] || '').trim();
     const expression = String(row['식'] || row['문항'] || '').trim();
     if (rowType && rowType !== '문항') return;
     if (!expression) return;
-    const fact = getGugudanFact({ text: expression });
+    const fact = getGugudanFact({ text: expression }, recordType);
     if (!fact) return;
     addGugudanAggregate(factMap, fact, {
       attempts: getCsvNumber(row['시도']),
@@ -1118,7 +1224,7 @@ function parseGugudanCsvAggregate(text) {
       lastWrongAt: row['최근오답시각']
     });
   });
-  return { factMap, studentIds };
+  return { factMap, studentIds, sourceLabels, recordType };
 }
 
 function getSortedGugudanFacts(factMap) {
@@ -1142,11 +1248,12 @@ function getGugudanDanSummary(factMap) {
 }
 
 function buildGugudanCsv(studentId, factMap, options = {}) {
+  const config = getPracticeRecordConfig(options.recordType || session?.packId || 'gugudan');
   const createdAt = options.createdAt || new Date();
   const createdText = formatCsvDateTime(createdAt);
   const minutes = options.minutes || session?.minutes || '';
   const playedText = options.playedText || '';
-  const sourceLabel = options.sourceLabel || '구구단';
+  const sourceLabel = options.sourceLabel || config.sourceLabel;
   const rows = [[
     '행구분',
     '학생번호',
@@ -1170,7 +1277,7 @@ function buildGugudanCsv(studentId, factMap, options = {}) {
       sourceLabel,
       minutes,
       playedText,
-      `${item.dan}단`,
+      config.groupLabel(item),
       '',
       item.attempts,
       item.correct,
@@ -1187,7 +1294,7 @@ function buildGugudanCsv(studentId, factMap, options = {}) {
       sourceLabel,
       minutes,
       playedText,
-      `${item.dan}단`,
+      config.groupLabel(item),
       item.expression,
       item.attempts,
       item.correct,
@@ -1278,11 +1385,13 @@ function closeQrModal() {
 }
 
 function recordGugudanAnswer(question, choice, correct, quiz) {
-  if (!session || session.packId !== 'gugudan' || session.players.length !== 1) return;
-  const fact = getGugudanFact(question);
+  const recordType = getPracticeRecordTypeForPack(session?.packId);
+  if (!session || !recordType || session.players.length !== 1) return;
+  const fact = getGugudanFact(question, recordType);
   if (!fact) return;
   const startedAtMs = Number(quiz?.questionStartedAtMs) || 0;
   session.gugudanRecords.push({
+    recordType,
     factKey: fact.key,
     dan: fact.dan,
     multiplier: fact.multiplier,
@@ -1297,23 +1406,28 @@ function recordGugudanAnswer(question, choice, correct, quiz) {
 }
 
 function isGugudanSoloRecordResult() {
-  return !!session && session.packId === 'gugudan' && session.players.length === 1;
+  return !!session && isPracticeRecordPack(session.packId) && session.players.length === 1;
+}
+
+function getCurrentPracticeRecordType() {
+  return getPracticeRecordTypeForPack(session?.packId) || 'gugudan';
 }
 
 function getCurrentGugudanFactMap() {
-  return createGugudanAggregateFromRecords(session?.gugudanRecords || []);
+  return createGugudanAggregateFromRecords(session?.gugudanRecords || [], getCurrentPracticeRecordType());
 }
 
-function getGugudanWeaknessText(factMap) {
+function getGugudanWeaknessText(factMap, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
   const items = getSortedGugudanFacts(factMap);
   const totalAttempts = items.reduce((sum, item) => sum + item.attempts, 0);
-  if (!totalAttempts) return '아직 저장할 구구단 풀이 기록이 없습니다.';
+  if (!totalAttempts) return config.emptyText;
   const weakItems = items
     .filter((item) => item.wrong > 0)
     .sort((left, right) => right.wrong - left.wrong || left.dan - right.dan || left.multiplier - right.multiplier)
     .slice(0, 3);
   if (!weakItems.length) return '이번 판 오답 없음 · 모든 풀이가 정답입니다.';
-  return `오답 확인: ${weakItems.map((item) => `${item.expression} (${item.wrong}회)`).join(', ')}`;
+  return `오답 확인: ${weakItems.map((item) => `${config.factLabel(item)} (${item.wrong}회)`).join(', ')}`;
 }
 
 function setGugudanRecordStatus(message = '', kind = '') {
@@ -1335,17 +1449,21 @@ function renderGugudanRecordPanel() {
     return;
   }
 
+  const recordType = getCurrentPracticeRecordType();
+  const config = getPracticeRecordConfig(recordType);
   const factMap = getCurrentGugudanFactMap();
   const hasRecords = factMap.size > 0;
+  const title = panel.querySelector('.gugudan-record-copy b');
   const copy = panel.querySelector('.gugudan-record-copy p');
+  if (title) title.textContent = config.recordTitle;
   if (copy) {
     copy.textContent = hasRecords
-      ? getGugudanWeaknessText(factMap)
+      ? getGugudanWeaknessText(factMap, recordType)
       : '문제를 1개 이상 풀면 기록을 저장할 수 있습니다. 학생번호는 앱 안에 저장하지 않습니다.';
   }
   if (elements.gugudanDownloadCurrentButton) elements.gugudanDownloadCurrentButton.disabled = !hasRecords;
   if (elements.gugudanMergeCsvButton) elements.gugudanMergeCsvButton.disabled = !hasRecords;
-  setGugudanRecordStatus(hasRecords ? '이번 기록을 새로 저장하거나, 기존 기록 파일을 선택해 이어 저장할 수 있습니다.' : '저장할 구구단 풀이 기록이 없습니다.', hasRecords ? '' : 'error');
+  setGugudanRecordStatus(hasRecords ? '이번 기록을 새로 저장하거나, 기존 기록 파일을 선택해 이어 저장할 수 있습니다.' : `저장할 ${config.sourceLabel} 풀이 기록이 없습니다.`, hasRecords ? '' : 'error');
 }
 
 function getStudentIdForCsv() {
@@ -1360,62 +1478,71 @@ function getStudentIdForCsv() {
   return studentId;
 }
 
-function getGugudanCsvFilename(studentId, merged = false) {
-  return `gugudan-student-${studentId}${merged ? '-merged' : ''}-${formatFileTimestamp(new Date())}.csv`;
+function getGugudanCsvFilename(studentId, merged = false, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  const stamp = formatFileTimestamp(new Date());
+  return merged ? `${config.filenamePrefix}${studentId}-종합.csv` : `${config.filenamePrefix}${studentId}-${stamp}.csv`;
 }
 
 function getGugudanCsvOptions() {
+  const recordType = getCurrentPracticeRecordType();
+  const config = getPracticeRecordConfig(recordType);
   const summary = session ? summarizeSession() : { playedSec: 0 };
   return {
+    recordType,
     minutes: session?.minutes || '',
     playedText: formatClock(summary.playedSec || 0),
-    sourceLabel: session?.packLabel || '구구단'
+    sourceLabel: session?.packLabel || config.sourceLabel
   };
 }
 
 function downloadCurrentGugudanCsv() {
+  const recordType = getCurrentPracticeRecordType();
+  const config = getPracticeRecordConfig(recordType);
   if (!isGugudanSoloRecordResult()) {
-    setGugudanRecordStatus('구구단 1인 플레이 결과에서만 기록을 저장할 수 있습니다.', 'error');
+    setGugudanRecordStatus(config.recordUnavailableText, 'error');
     return;
   }
   const studentId = getStudentIdForCsv();
   if (!studentId) return;
   const factMap = getCurrentGugudanFactMap();
   if (!factMap.size) {
-    setGugudanRecordStatus('저장할 구구단 풀이 기록이 없습니다.', 'error');
+    setGugudanRecordStatus(`저장할 ${config.sourceLabel} 풀이 기록이 없습니다.`, 'error');
     return;
   }
   const csvText = buildGugudanCsv(studentId, factMap, getGugudanCsvOptions());
-  downloadCsvFile(getGugudanCsvFilename(studentId), csvText);
+  downloadCsvFile(getGugudanCsvFilename(studentId, false, recordType), csvText);
   setGugudanRecordStatus('이번 기록을 저장했습니다.', 'success');
 }
 
 async function loadPreviousGugudanCsv(file) {
   if (!isGugudanSoloRecordResult() || !file) return;
+  const recordType = getCurrentPracticeRecordType();
+  const config = getPracticeRecordConfig(recordType);
   const studentId = getStudentIdForCsv();
   if (!studentId) return;
   const currentMap = getCurrentGugudanFactMap();
   if (!currentMap.size) {
-    setGugudanRecordStatus('합칠 이번 구구단 풀이 기록이 없습니다.', 'error');
+    setGugudanRecordStatus(`합칠 이번 ${config.sourceLabel} 풀이 기록이 없습니다.`, 'error');
     return;
   }
 
   try {
-    const parsed = parseGugudanCsvAggregate(await file.text());
+    const parsed = parseGugudanCsvAggregate(await file.text(), recordType);
     const mismatchedStudentIds = Array.from(parsed.studentIds).filter((id) => id !== studentId);
     if (mismatchedStudentIds.length) {
       setGugudanRecordStatus('학생번호가 다른 기록입니다. 같은 학생번호의 기록만 이어 저장할 수 있습니다.', 'error');
       return;
     }
     if (!parsed.factMap.size) {
-      setGugudanRecordStatus('구구단 학습 기록을 찾을 수 없습니다.', 'error');
+      setGugudanRecordStatus(config.missingText, 'error');
       return;
     }
 
     const mergedMap = new Map(parsed.factMap);
     mergeGugudanFactMap(mergedMap, currentMap);
     const csvText = buildGugudanCsv(studentId, mergedMap, getGugudanCsvOptions());
-    downloadCsvFile(getGugudanCsvFilename(studentId, true), csvText);
+    downloadCsvFile(getGugudanCsvFilename(studentId, true, recordType), csvText);
     setGugudanRecordStatus('기존 기록에 이번 기록을 이어 저장했습니다.', 'success');
   } catch (_error) {
     setGugudanRecordStatus('기록 파일을 읽지 못했습니다. 이 앱에서 받은 기록 파일인지 확인하세요.', 'error');
@@ -1447,13 +1574,255 @@ function getGugudanAggregateStats(factMap) {
   };
 }
 
-function renderGugudanStatusPanelError(message) {
+function formatGugudanReportAccuracy(correct, attempts) {
+  const safeCorrect = Math.max(0, Number(correct) || 0);
+  const safeAttempts = Math.max(0, Number(attempts) || 0);
+  const percent = safeAttempts > 0 ? Math.round((safeCorrect / safeAttempts) * 100) : 0;
+  return `${percent}% (${safeCorrect}/${safeAttempts})`;
+}
+
+function formatGugudanExpression(value) {
+  return String(value || '').replace(/x/gi, '×');
+}
+
+function getGugudanRiskLevel(item) {
+  const attempts = Math.max(0, Number(item?.attempts) || 0);
+  const wrong = Math.max(0, Number(item?.wrong) || 0);
+  if (!attempts) return 'none';
+  const wrongRate = wrong / attempts;
+  if (wrongRate >= 0.4 || wrong >= 3) return 'danger';
+  if (wrong > 0) return 'warning';
+  return 'ok';
+}
+
+function getGugudanRiskLabel(level) {
+  if (level === 'danger') return '집중 연습';
+  if (level === 'warning') return '다시 확인';
+  if (level === 'ok') return '안정';
+  return '기록 없음';
+}
+
+function sortGugudanWeakItems(items) {
+  return [...items].sort((left, right) => {
+    const leftRate = left.attempts ? left.wrong / left.attempts : 0;
+    const rightRate = right.attempts ? right.wrong / right.attempts : 0;
+    return (
+      right.wrong - left.wrong
+      || rightRate - leftRate
+      || right.attempts - left.attempts
+      || left.dan - right.dan
+      || (left.multiplier || 0) - (right.multiplier || 0)
+    );
+  });
+}
+
+function buildGugudanReportSummary(record) {
+  const facts = getSortedGugudanFacts(record?.factMap || new Map());
+  const total = facts.reduce((summary, item) => {
+    summary.attempts += item.attempts;
+    summary.correct += item.correct;
+    summary.wrong += item.wrong;
+    return summary;
+  }, { attempts: 0, correct: 0, wrong: 0 });
+  const weakDans = sortGugudanWeakItems(
+    getGugudanDanSummary(record?.factMap || new Map()).filter((item) => item.attempts > 0 && item.wrong > 0)
+  ).slice(0, 4);
+  const weakFacts = sortGugudanWeakItems(
+    facts.filter((item) => item.attempts > 0 && item.wrong > 0)
+  ).slice(0, 6);
+  return { ...total, weakDans, weakFacts };
+}
+
+function getGugudanReportComment(summary, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  if (!summary.attempts) return config.emptyText;
+  if (!summary.wrong) return '누적 오답이 없습니다. 지금 기록에서는 안정적으로 풀고 있습니다.';
+  const worstDan = summary.weakDans[0];
+  const worstFact = summary.weakFacts[0];
+  if (worstDan && worstFact) {
+    return `${config.groupLabel(worstDan)}와 ${config.factLabel(worstFact)}을 먼저 다시 보면 효과적입니다.`;
+  }
+  if (worstDan) return `${config.groupLabel(worstDan)}부터 다시 확인하면 좋습니다.`;
+  return '오답이 있는 문항부터 짧게 다시 풀어보면 좋습니다.';
+}
+
+function getGugudanDanReportItems(factMap) {
+  const danSummary = new Map(getGugudanDanSummary(factMap).map((item) => [item.dan, item]));
+  return Array.from({ length: 8 }, (_, index) => {
+    const dan = index + 2;
+    return danSummary.get(dan) || { dan, attempts: 0, correct: 0, wrong: 0 };
+  });
+}
+
+function renderGugudanWeakBars(items, type, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  if (!items.length) {
+    return '<p class="gugudan-report-empty">누적 오답이 없습니다.</p>';
+  }
+  const maxWrong = Math.max(1, ...items.map((item) => item.wrong));
+  return items.map((item) => {
+    const label = type === 'dan' ? config.groupLabel(item) : config.factLabel(item);
+    const percent = item.attempts ? Math.round((item.wrong / item.attempts) * 100) : 0;
+    const width = Math.max(10, Math.round((item.wrong / maxWrong) * 100));
+    const level = getGugudanRiskLevel(item);
+    return `
+      <div class="gugudan-weak-row risk-${level}">
+        <div class="gugudan-weak-meta">
+          <strong>${escapeHtml(label)}</strong>
+          <span>오답 ${item.wrong}회 · 오답률 ${percent}%</span>
+        </div>
+        <div class="gugudan-weak-track" aria-hidden="true"><i style="width: ${width}%"></i></div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderGugudanHeatmap(factMap, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  const cells = [`<div class="gugudan-heatmap-cell is-label">${escapeHtml(config.rowHeader)}</div>`];
+  for (let multiplier = 1; multiplier <= 9; multiplier += 1) {
+    cells.push(`<div class="gugudan-heatmap-cell is-label">${multiplier}</div>`);
+  }
+  for (let dan = 2; dan <= 9; dan += 1) {
+    cells.push(`<div class="gugudan-heatmap-cell is-label">${dan}</div>`);
+    for (let multiplier = 1; multiplier <= 9; multiplier += 1) {
+      const key = `${dan}x${multiplier}`;
+      const item = factMap.get(key) || {
+        dan,
+        multiplier,
+        expression: key,
+        attempts: 0,
+        correct: 0,
+        wrong: 0
+      };
+      const level = getGugudanRiskLevel(item);
+      const label = config.cellLabel(dan, multiplier);
+      const title = item.attempts
+        ? `${label}: 시도 ${item.attempts}, 오답 ${item.wrong}, 정답률 ${formatCsvAccuracy(item.correct, item.attempts)}`
+        : `${label}: 기록 없음`;
+      cells.push(`
+        <div class="gugudan-heatmap-cell level-${level}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
+          <strong>${label}</strong>
+          <span>${escapeHtml(getGugudanRiskLabel(level))}</span>
+        </div>
+      `);
+    }
+  }
+  return cells.join('');
+}
+
+function setGugudanReportOpen(open, options = {}) {
+  const active = Boolean(open);
+  if (!elements.gugudanReportModal) return;
+  elements.gugudanReportModal.classList.toggle('is-hidden', !active);
+  elements.gugudanReportModal.setAttribute('aria-hidden', String(!active));
+  document.body.classList.toggle('gugudan-report-open', active);
+  if (active) {
+    elements.gugudanReportCloseButton?.focus();
+  } else if (options.restoreFocus !== false) {
+    (options.restoreElement || elements.gugudanStatusButton)?.focus();
+  }
+}
+
+function renderGugudanStatusReport(record, fileName = '', options = {}) {
+  if (!elements.gugudanReportBody) return;
+  const recordType = options.recordType || record?.recordType || 'gugudan';
+  const config = getPracticeRecordConfig(recordType);
+  if (!record?.factMap?.size) {
+    elements.gugudanReportBody.innerHTML = `<p class="gugudan-report-empty">${escapeHtml(config.missingText)}</p>`;
+    setGugudanReportOpen(true, { restoreFocus: false });
+    return;
+  }
+  const summary = buildGugudanReportSummary(record);
+  const studentIds = Array.from(record.studentIds || []).filter(Boolean).sort((left, right) => left.localeCompare(right, 'ko-KR'));
+  const studentText = studentIds.length ? studentIds.join(', ') : '학생번호 없음';
+  const danItems = getGugudanDanReportItems(record.factMap);
+  const facts = getSortedGugudanFacts(record.factMap);
+  const dangerCount = facts.filter((item) => getGugudanRiskLevel(item) === 'danger').length;
+  const warningCount = facts.filter((item) => getGugudanRiskLevel(item) === 'warning').length;
+  if (elements.gugudanReportTitle) {
+    elements.gugudanReportTitle.textContent = config.reportTitle;
+  }
+  if (elements.gugudanReportSubtitle) {
+    elements.gugudanReportSubtitle.textContent = fileName
+      ? `${fileName} · ${studentText}`
+      : studentText;
+  }
+  elements.gugudanReportBody.innerHTML = `
+    <section class="gugudan-report-hero">
+      <div>
+        <span>누적 정답률</span>
+        <strong>${escapeHtml(formatGugudanReportAccuracy(summary.correct, summary.attempts))}</strong>
+      </div>
+      <p>${escapeHtml(getGugudanReportComment(summary, recordType))}</p>
+    </section>
+
+    <section class="gugudan-report-metrics" aria-label="구구단 누적 요약">
+      <div><span>풀이 수</span><strong>${summary.attempts}</strong><em>문제</em></div>
+      <div><span>정답 수</span><strong>${summary.correct}</strong><em>개</em></div>
+      <div><span>오답 수</span><strong>${summary.wrong}</strong><em>개</em></div>
+      <div><span>집중 연습</span><strong>${dangerCount}</strong><em>문항</em></div>
+      <div><span>다시 확인</span><strong>${warningCount}</strong><em>문항</em></div>
+    </section>
+
+    <section class="gugudan-report-section">
+      <div class="gugudan-report-section-head">
+        <h3>${escapeHtml(config.weakGroupTitle)}</h3>
+        <span>오답 횟수와 오답률 기준</span>
+      </div>
+      <div class="gugudan-weak-list">${renderGugudanWeakBars(summary.weakDans, 'dan', recordType)}</div>
+    </section>
+
+    <section class="gugudan-report-section">
+      <div class="gugudan-report-section-head">
+        <h3>${escapeHtml(config.weakFactTitle)}</h3>
+        <span>먼저 복습할 문항</span>
+      </div>
+      <div class="gugudan-weak-list">${renderGugudanWeakBars(summary.weakFacts, 'fact', recordType)}</div>
+    </section>
+
+    <section class="gugudan-report-section">
+      <div class="gugudan-report-section-head">
+        <h3>${escapeHtml(config.groupSectionTitle)}</h3>
+        <span>${escapeHtml(config.groupSectionCaption)}</span>
+      </div>
+      <div class="gugudan-dan-strip">
+        ${danItems.map((item) => {
+          const level = getGugudanRiskLevel(item);
+          return `
+            <div class="gugudan-dan-card risk-${level}">
+              <b>${escapeHtml(config.groupLabel(item))}</b>
+              <strong>${escapeHtml(formatCsvAccuracy(item.correct, item.attempts))}</strong>
+              <span>${escapeHtml(getGugudanRiskLabel(level))} · 오답 ${item.wrong}회</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </section>
+
+    <section class="gugudan-report-section">
+      <div class="gugudan-report-section-head">
+        <h3>${escapeHtml(config.heatmapTitle)}</h3>
+        <span>초록 안정 · 노랑 다시 확인 · 빨강 집중 연습</span>
+      </div>
+      <div class="gugudan-heatmap" role="grid" aria-label="${escapeHtml(config.heatmapAria)}">
+        ${renderGugudanHeatmap(record.factMap, recordType)}
+      </div>
+    </section>
+
+    <p class="gugudan-report-note">${escapeHtml(options.message || '선택한 기록 파일은 앱 안에 저장되지 않습니다.')}</p>
+  `;
+  setGugudanReportOpen(true, { restoreFocus: false });
+}
+
+function renderGugudanStatusPanelError(message, recordType = 'gugudan') {
   if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  const config = getPracticeRecordConfig(recordType);
   elements.gugudanStatusPanel.classList.remove('is-hidden', 'is-success');
   elements.gugudanStatusPanel.classList.add('is-error');
   elements.gugudanStatusContent.innerHTML = `
     <div class="gugudan-status-head">
-      <b>내 구구단 상태</b>
+      <b>${escapeHtml(config.statusTitle)}</b>
       <span>기록 확인</span>
     </div>
     <p class="gugudan-status-message">${escapeHtml(message)}</p>
@@ -1462,25 +1831,27 @@ function renderGugudanStatusPanelError(message) {
 
 function renderGugudanStatusPanel(parsed, fileName = '', options = {}) {
   if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  const recordType = options.recordType || parsed?.recordType || 'gugudan';
+  const config = getPracticeRecordConfig(recordType);
   if (!parsed?.factMap?.size) {
-    renderGugudanStatusPanelError('구구단 학습 기록을 찾을 수 없습니다.');
+    renderGugudanStatusPanelError(config.missingText, recordType);
     return;
   }
   const stats = getGugudanAggregateStats(parsed.factMap);
   const studentIds = Array.from(parsed.studentIds).filter(Boolean);
   const studentText = studentIds.length ? studentIds.join(', ') : '기록 없음';
   const weakText = stats.weakFacts.length
-    ? stats.weakFacts.map((item) => `${item.expression} ${item.wrong}회`).join(' · ')
+    ? stats.weakFacts.map((item) => `${config.factLabel(item)} ${item.wrong}회`).join(' · ')
     : '오답 기록 없음';
   const danText = stats.weakDans.length
-    ? stats.weakDans.map((item) => `${item.dan}단 ${formatCsvAccuracy(item.correct, item.attempts)}`).join(' · ')
+    ? stats.weakDans.map((item) => `${config.groupLabel(item)} ${formatCsvAccuracy(item.correct, item.attempts)}`).join(' · ')
     : '단별 기록 없음';
 
   elements.gugudanStatusPanel.classList.remove('is-hidden', 'is-error');
   elements.gugudanStatusPanel.classList.add('is-success');
   elements.gugudanStatusContent.innerHTML = `
     <div class="gugudan-status-head">
-      <b>${escapeHtml(options.title || '내 구구단 상태')}</b>
+      <b>${escapeHtml(options.title || config.statusTitle)}</b>
       <span>${escapeHtml(fileName || '선택한 기록')}</span>
     </div>
     <div class="gugudan-status-grid">
@@ -1495,15 +1866,20 @@ function renderGugudanStatusPanel(parsed, fileName = '', options = {}) {
   `;
 }
 
-async function loadGugudanStatusFile(file) {
+async function loadGugudanStatusFile(file, recordType = 'gugudan') {
   if (!file) return;
+  const config = getPracticeRecordConfig(recordType);
   try {
-    const parsed = parseGugudanCsvAggregate(await file.text());
-    renderGugudanStatusPanel(parsed, file.name || '');
+    const parsed = parseGugudanCsvAggregate(await file.text(), recordType);
+    renderGugudanStatusPanel(parsed, file.name || '', { recordType });
+    if (parsed.factMap.size) {
+      renderGugudanStatusReport(parsed, file.name || '', { recordType });
+    }
   } catch (_error) {
-    renderGugudanStatusPanelError('기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.');
+    renderGugudanStatusPanelError(`${config.sourceLabel} 기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.`, recordType);
   } finally {
-    if (elements.gugudanStatusFile) elements.gugudanStatusFile.value = '';
+    const input = recordType === 'division-gugudan' ? elements.divisionGugudanStatusFile : elements.gugudanStatusFile;
+    if (input) input.value = '';
   }
 }
 
@@ -1518,10 +1894,11 @@ function mergeGugudanFactMap(targetMap, sourceMap) {
   });
 }
 
-async function mergeSelectedGugudanRecordFiles(files) {
+async function mergeSelectedGugudanRecordFiles(files, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
   const selectedFiles = Array.from(files || []);
   if (selectedFiles.length < 2) {
-    renderGugudanStatusPanelError('합칠 기록 파일을 2개 이상 선택하세요.');
+    renderGugudanStatusPanelError('합칠 기록 파일을 2개 이상 선택하세요.', recordType);
     return;
   }
 
@@ -1531,7 +1908,7 @@ async function mergeSelectedGugudanRecordFiles(files) {
   try {
     const parsedFiles = await Promise.all(selectedFiles.map(async (file) => ({
       file,
-      parsed: parseGugudanCsvAggregate(await file.text())
+      parsed: parseGugudanCsvAggregate(await file.text(), recordType)
     })));
     parsedFiles.forEach(({ file, parsed }) => {
       if (!parsed.factMap.size) {
@@ -1544,39 +1921,51 @@ async function mergeSelectedGugudanRecordFiles(files) {
       mergeGugudanFactMap(mergedMap, parsed.factMap);
     });
   } catch (_error) {
-    renderGugudanStatusPanelError('기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.');
+    renderGugudanStatusPanelError('기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.', recordType);
     return;
   } finally {
-    if (elements.gugudanMergeRecordsFile) elements.gugudanMergeRecordsFile.value = '';
+    const input = recordType === 'division-gugudan' ? elements.divisionGugudanMergeRecordsFile : elements.gugudanMergeRecordsFile;
+    if (input) input.value = '';
   }
 
   if (invalidFileNames.length) {
-    renderGugudanStatusPanelError(`구구단 학습 기록을 찾을 수 없는 파일이 있습니다: ${invalidFileNames.join(', ')}`);
+    renderGugudanStatusPanelError(`${config.sourceLabel} 학습 기록을 찾을 수 없는 파일이 있습니다: ${invalidFileNames.join(', ')}`, recordType);
     return;
   }
   if (!mergedMap.size) {
-    renderGugudanStatusPanelError('합칠 구구단 학습 기록을 찾을 수 없습니다.');
+    renderGugudanStatusPanelError(`합칠 ${config.sourceLabel} 학습 기록을 찾을 수 없습니다.`, recordType);
     return;
   }
   if (studentIds.size !== 1) {
-    renderGugudanStatusPanelError('학생번호가 서로 다른 기록은 합칠 수 없습니다. 같은 학생번호의 파일만 선택하세요.');
+    renderGugudanStatusPanelError('학생번호가 서로 다른 기록은 합칠 수 없습니다. 같은 학생번호의 파일만 선택하세요.', recordType);
     return;
   }
 
   const studentId = Array.from(studentIds)[0];
   const csvText = buildGugudanCsv(studentId, mergedMap, {
+    recordType,
     minutes: '',
     playedText: '',
-    sourceLabel: '구구단'
+    sourceLabel: config.sourceLabel
   });
-  const filename = getGugudanCsvFilename(studentId, true);
+  const filename = getGugudanCsvFilename(studentId, true, recordType);
   downloadCsvFile(filename, csvText);
   renderGugudanStatusPanel({
     factMap: mergedMap,
-    studentIds
+    studentIds,
+    recordType
   }, filename, {
-    title: '구구단 기록 합치기',
+    recordType,
+    title: config.mergeTitle,
     message: `${selectedFiles.length}개 기록을 하나로 합쳐 저장했습니다.`
+  });
+  renderGugudanStatusReport({
+    factMap: mergedMap,
+    studentIds,
+    recordType
+  }, filename, {
+    recordType,
+    message: `${selectedFiles.length}개 기록을 하나로 합쳐 저장했습니다. 새 파일을 보관해 주세요.`
   });
 }
 
@@ -1857,14 +2246,14 @@ function renderSetupControls() {
   updateSetupSummary();
 }
 
-function parseCsv(text) {
+function parseCsv(text, packId = 'csv') {
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
   return lines.slice(1).map((line, index) => {
     const columns = line.split(',').map((value) => value.trim());
     const choices = columns.slice(1, 5).filter(Boolean);
     const answerIndex = Math.max(0, Number(columns[5]) - 1);
     return {
-      id: `gugudan-${index + 1}`,
+      id: `${packId}-${index + 1}`,
       prompt: '정답을 고르세요',
       text: columns[0],
       choices,
@@ -1949,7 +2338,7 @@ async function loadPack(packId) {
   const response = await fetch(pack.path, { cache: 'no-store' });
   if (!response.ok) throw new Error(`${pack.label} 데이터를 불러오지 못했습니다.`);
   const questions = pack.kind === 'csv'
-    ? parseCsv(await response.text())
+    ? parseCsv(await response.text(), pack.id)
     : normalizeJsonQuestions(await response.json());
   if (!questions.length) throw new Error(`${pack.label}에 사용할 문제가 없습니다.`);
   packCache.set(packId, questions);
@@ -4170,7 +4559,19 @@ function bindEvents() {
     elements.gugudanStatusFile.click();
   });
   elements.gugudanStatusFile?.addEventListener('change', () => {
-    loadGugudanStatusFile(elements.gugudanStatusFile.files?.[0]);
+    loadGugudanStatusFile(elements.gugudanStatusFile.files?.[0], 'gugudan');
+  });
+  elements.divisionGugudanStatusButton?.addEventListener('click', () => {
+    if (!elements.divisionGugudanStatusFile) return;
+    elements.divisionGugudanStatusFile.value = '';
+    elements.divisionGugudanStatusFile.click();
+  });
+  elements.divisionGugudanStatusFile?.addEventListener('change', () => {
+    loadGugudanStatusFile(elements.divisionGugudanStatusFile.files?.[0], 'division-gugudan');
+  });
+  elements.gugudanReportCloseButton?.addEventListener('click', () => setGugudanReportOpen(false));
+  elements.gugudanReportModal?.addEventListener('click', (event) => {
+    if (event.target === elements.gugudanReportModal) setGugudanReportOpen(false);
   });
   elements.gugudanMergeRecordsButton?.addEventListener('click', () => {
     if (!elements.gugudanMergeRecordsFile) return;
@@ -4178,7 +4579,15 @@ function bindEvents() {
     elements.gugudanMergeRecordsFile.click();
   });
   elements.gugudanMergeRecordsFile?.addEventListener('change', () => {
-    mergeSelectedGugudanRecordFiles(elements.gugudanMergeRecordsFile.files);
+    mergeSelectedGugudanRecordFiles(elements.gugudanMergeRecordsFile.files, 'gugudan');
+  });
+  elements.divisionGugudanMergeRecordsButton?.addEventListener('click', () => {
+    if (!elements.divisionGugudanMergeRecordsFile) return;
+    elements.divisionGugudanMergeRecordsFile.value = '';
+    elements.divisionGugudanMergeRecordsFile.click();
+  });
+  elements.divisionGugudanMergeRecordsFile?.addEventListener('change', () => {
+    mergeSelectedGugudanRecordFiles(elements.divisionGugudanMergeRecordsFile.files, 'division-gugudan');
   });
   elements.gugudanDownloadCurrentButton?.addEventListener('click', downloadCurrentGugudanCsv);
   elements.gugudanMergeCsvButton?.addEventListener('click', () => {
@@ -4223,7 +4632,12 @@ function bindEvents() {
     }
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeQrModal();
+    if (event.key === 'Escape') {
+      closeQrModal();
+      if (elements.gugudanReportModal && !elements.gugudanReportModal.classList.contains('is-hidden')) {
+        setGugudanReportOpen(false);
+      }
+    }
   });
   document.addEventListener('fullscreenchange', updateFullscreenButtons);
   document.addEventListener('webkitfullscreenchange', updateFullscreenButtons);

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>놀퀴즈:점프맵</title>
-    <link rel="stylesheet" href="./styles.css?v=20260601-gugudan-record-merge" />
+    <link rel="stylesheet" href="./styles.css?v=20260601-division-records" />
   </head>
   <body class="theme-jumpmap">
     <button class="display-mode-toggle" type="button" id="display-mode-toggle" aria-label="화면 모드 전환">모드:자동</button>
@@ -112,18 +112,22 @@
                 <div class="character-grid" id="character-options" aria-label="사용자별 캐릭터 선택"></div>
               </div>
 
-              <section class="gugudan-status-check" aria-label="내 구구단 상태 확인">
+              <section class="gugudan-status-check" aria-label="연산 기록 상태 확인">
                 <div class="gugudan-status-copy">
-                  <b>구구단 누적 상태</b>
-                  <p>저장해 둔 기록 파일을 열어 상태를 확인하거나 여러 파일을 하나로 합칩니다.</p>
+                  <b>구구단 · 나눗셈 누적 상태</b>
+                  <p>저장해 둔 기록 파일을 열어 상태를 확인하거나 같은 학생번호 파일을 하나로 합칩니다.</p>
                 </div>
                 <div class="gugudan-status-actions">
                   <button class="ghost-action gugudan-status-action" type="button" id="gugudan-status-button">내 구구단 상태 확인</button>
-                  <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">기록 합치기</button>
+                  <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">구구단 기록 합치기</button>
+                  <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-status-button">내 나눗셈(구구단) 상태 확인</button>
+                  <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-merge-records-button">나눗셈 기록 합치기</button>
                 </div>
                 <input class="is-hidden" id="gugudan-status-file" type="file" accept=".csv,text/csv" />
                 <input class="is-hidden" id="gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
-                <section class="gugudan-status-panel is-hidden" id="gugudan-status-panel" aria-live="polite" aria-label="내 구구단 상태">
+                <input class="is-hidden" id="division-gugudan-status-file" type="file" accept=".csv,text/csv" />
+                <input class="is-hidden" id="division-gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
+                <section class="gugudan-status-panel is-hidden" id="gugudan-status-panel" aria-live="polite" aria-label="연산 기록 상태">
                   <div id="gugudan-status-content"></div>
                 </section>
               </section>
@@ -174,7 +178,7 @@
             <div class="result-grid" id="result-grid"></div>
             <section class="gugudan-record-panel is-hidden" id="gugudan-record-panel" aria-label="구구단 학습 기록 저장">
               <div class="gugudan-record-copy">
-                <b>구구단 학습 기록</b>
+                <b>구구단 학습 기록 저장</b>
                 <p>학생번호는 저장 파일에만 들어가며, 앱 안에는 저장하지 않습니다.</p>
               </div>
               <label class="gugudan-student-field" for="gugudan-student-id">
@@ -212,6 +216,20 @@
       </section>
     </div>
 
+    <section class="gugudan-report-modal is-hidden" id="gugudan-report-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="gugudan-report-title">
+      <div class="gugudan-report-card">
+        <div class="gugudan-report-head">
+          <div>
+            <span class="screen-kicker">Gugudan Report</span>
+            <h2 id="gugudan-report-title">내 구구단 상태</h2>
+            <p id="gugudan-report-subtitle">기록 파일을 선택하면 보고서가 표시됩니다.</p>
+          </div>
+          <button class="ghost-action gugudan-report-close-button" type="button" id="gugudan-report-close-button">닫기</button>
+        </div>
+        <div class="gugudan-report-body" id="gugudan-report-body"></div>
+      </div>
+    </section>
+
     <script>
       (() => {
         if (window.location.protocol !== 'file:') return;
@@ -242,7 +260,7 @@
         }
       })();
     </script>
-    <script src="./assets/vendor/qr-js.js?v=20260601-gugudan-record-merge"></script>
-    <script type="module" src="./app.js?v=20260601-gugudan-record-merge"></script>
+    <script src="./assets/vendor/qr-js.js?v=20260601-division-records"></script>
+    <script type="module" src="./app.js?v=20260601-division-records"></script>
   </body>
 </html>
