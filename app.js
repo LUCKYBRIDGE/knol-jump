@@ -49,6 +49,13 @@ const SPRITE_MOVE_LATCH_SEC = 0.08;
 const LANDING_DUST_LIFE_SEC = 0.46;
 const LANDING_DUST_MAX_PARTICLES = 28;
 const BEST_HEIGHT_NOTICE_MS = 1100;
+const TEST_DATASET_SYNC_INTERVAL_MS = 250;
+const MIN_START_LOADING_MS = 1500;
+const LOADING_SPRITE_FRAME_MS = 120;
+const LOADING_FACT_ROTATE_MS = 4600;
+const PRELOAD_IMAGE_DECODE_TIMEOUT_MS = 450;
+const JUMPMAP_BGM_SRC = './assets/music/viacheslavstarostin-game-gaming-video-game-music-471936.mp3';
+const JUMPMAP_BGM_VOLUME = 0.45;
 const PLAYER_LABEL_COLORS = ['#38bdf8', '#f97316', '#22c55e', '#d946ef'];
 const OTHER_PLAYER_SPRITE_ALPHA = 0.28;
 const OTHER_PLAYER_LABEL_ALPHA = 0.14;
@@ -240,6 +247,56 @@ const CHARACTERS = [
   }
 ];
 
+const LOADING_FACTS_BY_CHARACTER = Object.freeze({
+  sejong: Object.freeze([
+    Object.freeze({
+      label: '세종대왕 역사 사실',
+      text: '세종실록에는 1443년에 훈민정음을 창제했다는 기록이 남아 있어요.',
+      source: '조선왕조실록 세종 25년 12월 30일'
+    }),
+    Object.freeze({
+      label: '세종대왕 역사 사실',
+      text: '세종실록에는 갑인자라는 새 금속 활자를 주조했다는 기사가 기록되어 있어요.',
+      source: '조선왕조실록 세종 16년 7월 2일'
+    }),
+    Object.freeze({
+      label: '세종대왕 역사 이야기',
+      text: '장영실과 과학 기술 운영에 관한 기록도 세종실록에서 확인할 수 있어요.',
+      source: '조선왕조실록 세종 24년 4월 27일'
+    })
+  ]),
+  leesunsin: Object.freeze([
+    Object.freeze({
+      label: '이순신 역사 사실',
+      text: '선조실록에는 노량해전에서 이순신이 전사했다는 보고가 남아 있어요.',
+      source: '조선왕조실록 선조 31년 12월 18일'
+    }),
+    Object.freeze({
+      label: '이순신 역사 사실',
+      text: '난중일기는 임진왜란 시기 전황과 일상을 함께 보여주는 대표 1차 사료예요.',
+      source: '국가유산포털 난중일기 및 서간첩 임진장초'
+    }),
+    Object.freeze({
+      label: '이순신 역사 이야기',
+      text: '숙종실록에는 이순신 사당에 현충이라는 이름을 내렸다는 기록이 있어요.',
+      source: '조선왕조실록 숙종 33년 2월 6일'
+    })
+  ])
+});
+
+const LOADING_GAME_FACTS = Object.freeze([
+  Object.freeze({
+    label: '게임 안내',
+    text: '퀴즈로 체력을 채운 뒤 발판을 딛고 더 높은 곳에 도전해 보세요.',
+    source: '놀퀴즈 점프맵 안내'
+  }),
+  Object.freeze({
+    label: '게임 안내',
+    text: '방향키와 점프키를 함께 쓰면 다음 발판으로 더 자연스럽게 이동할 수 있어요.',
+    source: '놀퀴즈 점프맵 안내'
+  })
+]);
+
 const elements = {
   setupScreen: $('#setup-screen'),
   playScreen: $('#play-screen'),
@@ -252,9 +309,26 @@ const elements = {
   characterOptions: $('#character-options'),
   startButton: $('#start-button'),
   setupError: $('#setup-error'),
+  gugudanStatusButton: $('#gugudan-status-button'),
+  gugudanStatusFile: $('#gugudan-status-file'),
+  gugudanMergeRecordsButton: $('#gugudan-merge-records-button'),
+  gugudanMergeRecordsFile: $('#gugudan-merge-records-file'),
+  gugudanStatusPanel: $('#gugudan-status-panel'),
+  gugudanStatusContent: $('#gugudan-status-content'),
+  loadingScreen: $('#jump-loading-screen'),
+  loadingTitle: $('#jump-loading-title'),
+  loadingMessage: $('#jump-loading-message'),
+  loadingModeTitle: $('#jump-loading-mode-title'),
+  loadingModeText: $('#jump-loading-mode-text'),
+  loadingFactLabel: $('#jump-loading-fact-label'),
+  loadingFactText: $('#jump-loading-fact-text'),
+  loadingFactSource: $('#jump-loading-fact-source'),
+  loadingSprite: $('#jump-loading-sprite'),
+  loadingProgressFill: $('#jump-loading-progress-fill'),
   finishGameButton: $('#finish-game-button'),
   playTitle: $('#play-title'),
   timerPill: $('#timer-pill'),
+  bgmToggleButton: $('#bgm-toggle-button'),
   gameStage: $('#game-stage'),
   questionArea: $('#question-area'),
   resultTitle: $('#result-title'),
@@ -262,10 +336,21 @@ const elements = {
   resultTimePill: $('#result-time-pill'),
   resultGrid: $('#result-grid'),
   playerResults: $('#player-results'),
+  gugudanRecordPanel: $('#gugudan-record-panel'),
+  gugudanStudentId: $('#gugudan-student-id'),
+  gugudanDownloadCurrentButton: $('#gugudan-download-current-button'),
+  gugudanMergeCsvButton: $('#gugudan-merge-csv-button'),
+  gugudanRecordFile: $('#gugudan-record-file'),
+  gugudanRecordStatus: $('#gugudan-record-status'),
+  qrModal: $('#qr-modal'),
+  qrLarge: $('#qr-large'),
+  qrUrlText: $('#qr-url-text'),
   restartSameButton: $('#restart-same-button'),
   backSetupButton: $('#back-setup-button'),
   displayModeToggle: $('#display-mode-toggle')
 };
+
+const QR_SHARE_URL = 'https://knol-jump.lucky20220528.workers.dev/';
 
 const packCache = new Map();
 const mapCache = new Map();
@@ -281,6 +366,14 @@ let selectedCharacterIds = Array.from({ length: Math.max(...PLAYER_COUNTS) }, (_
 let selectedDisplayMode = 'auto';
 let session = null;
 let viewportUpdateRaf = 0;
+let startLoadingSpriteTimer = 0;
+let startLoadingSpriteCharacterId = '';
+let startLoadingFactTimer = 0;
+let startLoadingFactCharacterId = '';
+let bgmAudio = null;
+let bgmMuted = false;
+let bgmRunning = false;
+let bgmFallback = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -302,6 +395,334 @@ function shuffle(list) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function setTextIfChanged(element, value) {
+  if (!element) return;
+  const next = String(value);
+  if (element.textContent !== next) element.textContent = next;
+}
+
+function setDatasetIfChanged(dataset, key, value) {
+  const next = String(value);
+  if (dataset[key] !== next) dataset[key] = next;
+}
+
+function deleteDatasetKey(dataset, key) {
+  if (key in dataset) delete dataset[key];
+}
+
+function setWidthIfChanged(element, value) {
+  if (!element) return;
+  const next = `${value}%`;
+  if (element.style.width !== next) element.style.width = next;
+}
+
+function setHiddenIfChanged(element, hidden) {
+  if (!element) return;
+  const next = !!hidden;
+  if (element.hidden !== next) element.hidden = next;
+}
+
+function toggleClassIfChanged(element, className, active) {
+  if (!element) return;
+  const next = !!active;
+  if (element.classList.contains(className) !== next) {
+    element.classList.toggle(className, next);
+  }
+}
+
+function setDisabledIfChanged(element, disabled) {
+  if (!element) return;
+  const next = !!disabled;
+  if (element.disabled !== next) element.disabled = next;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, Math.max(0, Number(ms) || 0));
+  });
+}
+
+async function keepMinimumLoadingTime(startedAt, minimumMs = MIN_START_LOADING_MS) {
+  const elapsed = performance.now() - startedAt;
+  const remaining = minimumMs - elapsed;
+  if (remaining > 0) await delay(remaining);
+}
+
+function getLoadingCharacterFromSelection() {
+  const selectedCharacter = getSelectedCharacters(selectedPlayers, { resolveRandom: false })[0];
+  if (!selectedCharacter || selectedCharacter.id === RANDOM_CHARACTER_ID) return CHARACTERS[0];
+  return getCharacter(selectedCharacter.id);
+}
+
+function getLoadingCharacterId(character) {
+  const characterId = character?.id === RANDOM_CHARACTER_ID ? CHARACTERS[0].id : character?.id;
+  return CHARACTERS.some((item) => item.id === characterId) ? characterId : CHARACTERS[0].id;
+}
+
+function getStartLoadingModeDescription() {
+  const totalSeconds = Math.max(60, Math.round((Number(selectedMinutes) || DEFAULT_PLAY_MINUTES) * 60));
+  return {
+    title: `현재 모드 · 타임어택 (${totalSeconds}초)`,
+    text: '제한 시간 종료 시 최종 높이가 기록됩니다. 퀴즈를 푸는 동안에도 시간이 계속 흐릅니다.'
+  };
+}
+
+function getLoadingSpriteSources(character) {
+  const selectedCharacter = character?.id === RANDOM_CHARACTER_ID ? CHARACTERS[0] : (character || CHARACTERS[0]);
+  const sprites = Array.isArray(selectedCharacter.walk) && selectedCharacter.walk.length
+    ? selectedCharacter.walk
+    : [selectedCharacter.right, selectedCharacter.front].filter(Boolean);
+  return sprites.length ? sprites : [CHARACTERS[0].walk[0]];
+}
+
+function setStartLoadingFact(fact) {
+  setTextIfChanged(elements.loadingFactLabel, fact?.label || '역사 이야기');
+  setTextIfChanged(elements.loadingFactText, fact?.text || '역사 정보를 준비하고 있어요.');
+  const source = fact?.source ? `출처: ${fact.source}` : '출처: 놀퀴즈';
+  setTextIfChanged(elements.loadingFactSource, source);
+}
+
+function buildStartLoadingFactPool(character) {
+  const characterId = getLoadingCharacterId(character);
+  const characterFacts = Array.isArray(LOADING_FACTS_BY_CHARACTER[characterId])
+    ? LOADING_FACTS_BY_CHARACTER[characterId]
+    : [];
+  if (characterFacts.length) {
+    return [...shuffle(characterFacts), ...shuffle([...LOADING_GAME_FACTS])];
+  }
+  return shuffle([...LOADING_GAME_FACTS]);
+}
+
+function stopStartLoadingSpriteAnimation() {
+  if (!startLoadingSpriteTimer) return;
+  window.clearInterval(startLoadingSpriteTimer);
+  startLoadingSpriteTimer = 0;
+  startLoadingSpriteCharacterId = '';
+}
+
+function startStartLoadingSpriteAnimation(character) {
+  if (!(elements.loadingSprite instanceof HTMLImageElement)) return;
+  const characterId = getLoadingCharacterId(character);
+  if (startLoadingSpriteTimer && startLoadingSpriteCharacterId === characterId) return;
+  const sprites = getLoadingSpriteSources(character);
+  let frameIndex = 0;
+  stopStartLoadingSpriteAnimation();
+  startLoadingSpriteCharacterId = characterId;
+  preloadImages(sprites);
+  elements.loadingSprite.src = sprites[0];
+  startLoadingSpriteTimer = window.setInterval(() => {
+    frameIndex = (frameIndex + 1) % sprites.length;
+    elements.loadingSprite.src = sprites[frameIndex];
+  }, LOADING_SPRITE_FRAME_MS);
+}
+
+function stopStartLoadingFactRotation() {
+  if (!startLoadingFactTimer) return;
+  window.clearInterval(startLoadingFactTimer);
+  startLoadingFactTimer = 0;
+  startLoadingFactCharacterId = '';
+}
+
+function startStartLoadingFactRotation(character) {
+  const characterId = getLoadingCharacterId(character);
+  if (startLoadingFactTimer && startLoadingFactCharacterId === characterId) return;
+  const facts = buildStartLoadingFactPool(character);
+  let factIndex = 0;
+  stopStartLoadingFactRotation();
+  startLoadingFactCharacterId = characterId;
+  setStartLoadingFact(facts[factIndex]);
+  startLoadingFactTimer = window.setInterval(() => {
+    factIndex = (factIndex + 1) % facts.length;
+    setStartLoadingFact(facts[factIndex]);
+  }, LOADING_FACT_ROTATE_MS);
+}
+
+function setStartLoadingState(loading, message = '', options = {}) {
+  const active = !!loading;
+  elements.startButton.disabled = active || !selectedMinutes;
+  elements.startButton.classList.toggle('is-loading', active);
+  elements.startButton.setAttribute('aria-busy', String(active));
+  elements.startButton.textContent = active ? '준비 중...' : '도전 시작';
+  elements.setupError.classList.toggle('is-loading', active);
+  elements.setupError.textContent = message;
+  if (!elements.loadingScreen) return;
+
+  setHiddenIfChanged(elements.loadingScreen, !active);
+  elements.loadingScreen.setAttribute('aria-hidden', String(!active));
+
+  if (!active) {
+    stopStartLoadingSpriteAnimation();
+    stopStartLoadingFactRotation();
+    setWidthIfChanged(elements.loadingProgressFill, 0);
+    return;
+  }
+
+  const character = options.character || getLoadingCharacterFromSelection();
+  const progress = Number.isFinite(options.progress) ? clamp(options.progress, 0, 1) : 0.12;
+  const modeDescription = getStartLoadingModeDescription();
+  setTextIfChanged(elements.loadingTitle, options.title || '점프맵 로딩 중');
+  setTextIfChanged(elements.loadingMessage, message || '캐릭터와 맵 데이터를 준비하고 있어요.');
+  setTextIfChanged(elements.loadingModeTitle, modeDescription.title);
+  setTextIfChanged(elements.loadingModeText, modeDescription.text);
+  setWidthIfChanged(elements.loadingProgressFill, Math.max(6, Math.round(progress * 100)));
+  startStartLoadingSpriteAnimation(character);
+  startStartLoadingFactRotation(character);
+}
+
+function updateBgmToggleButton() {
+  if (!elements.bgmToggleButton) return;
+  const audible = bgmRunning && !bgmMuted;
+  elements.bgmToggleButton.textContent = bgmMuted ? '음악 켜기' : '음악 끄기';
+  elements.bgmToggleButton.setAttribute('aria-pressed', String(audible));
+}
+
+function createBgmFallback() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (typeof AudioContextCtor !== 'function') {
+    return {
+      start: () => {},
+      stop: () => {}
+    };
+  }
+
+  const leadPattern = [440, 0, 587, 0, 659, 0, 587, 0, 523, 0, 659, 0, 698, 0, 659, 0];
+  const bassPattern = [110, 110, 147, 147, 98, 98, 147, 147];
+  const stepSec = 0.22;
+  let audioCtx = null;
+  let masterNode = null;
+  let timerId = 0;
+  let stepIndex = 0;
+  let nextNoteAt = 0;
+
+  const ensureAudio = () => {
+    if (!audioCtx) audioCtx = new AudioContextCtor();
+    if (!masterNode) {
+      masterNode = audioCtx.createGain();
+      masterNode.gain.value = JUMPMAP_BGM_VOLUME * 0.18;
+      masterNode.connect(audioCtx.destination);
+    }
+    return { audioCtx, masterNode };
+  };
+
+  const playTone = (frequency, when, duration, wave, gain) => {
+    if (!audioCtx || !masterNode || !frequency) return;
+    const osc = audioCtx.createOscillator();
+    const amp = audioCtx.createGain();
+    osc.type = wave;
+    osc.frequency.setValueAtTime(frequency, when);
+    amp.gain.setValueAtTime(0.0001, when);
+    amp.gain.exponentialRampToValueAtTime(gain, when + Math.min(0.03, duration * 0.35));
+    amp.gain.exponentialRampToValueAtTime(0.0001, when + duration + 0.02);
+    osc.connect(amp);
+    amp.connect(masterNode);
+    osc.start(when);
+    osc.stop(when + duration + 0.03);
+  };
+
+  const tick = () => {
+    if (!timerId || bgmMuted || document.hidden) return;
+    const { audioCtx: ctx } = ensureAudio();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+      return;
+    }
+    if (nextNoteAt <= 0) nextNoteAt = ctx.currentTime + 0.04;
+    while (nextNoteAt < ctx.currentTime + 0.3) {
+      const lead = Number(leadPattern[stepIndex % leadPattern.length]) || 0;
+      const bass = Number(bassPattern[stepIndex % bassPattern.length]) || 0;
+      playTone(lead, nextNoteAt, stepSec * 0.74, 'square', 0.06);
+      playTone(bass, nextNoteAt, stepSec * 0.9, 'triangle', 0.05);
+      stepIndex += 1;
+      nextNoteAt += stepSec;
+    }
+  };
+
+  return {
+    start: () => {
+      if (timerId) return;
+      ensureAudio();
+      tick();
+      timerId = window.setInterval(tick, 90);
+    },
+    stop: () => {
+      if (timerId) window.clearInterval(timerId);
+      timerId = 0;
+      stepIndex = 0;
+      nextNoteAt = 0;
+    }
+  };
+}
+
+function getBgmFallback() {
+  if (!bgmFallback) bgmFallback = createBgmFallback();
+  return bgmFallback;
+}
+
+function getBgmAudio() {
+  if (bgmAudio) return bgmAudio;
+  try {
+    bgmAudio = new Audio(JUMPMAP_BGM_SRC);
+    bgmAudio.preload = 'auto';
+    bgmAudio.loop = true;
+    bgmAudio.playsInline = true;
+    bgmAudio.volume = JUMPMAP_BGM_VOLUME;
+    bgmAudio.addEventListener('error', () => {
+      if (bgmRunning && !bgmMuted) getBgmFallback().start();
+    });
+  } catch (_error) {
+    bgmAudio = null;
+  }
+  return bgmAudio;
+}
+
+function pauseBgmOutput(reset = false) {
+  if (bgmAudio) {
+    bgmAudio.pause();
+    if (reset) {
+      try {
+        bgmAudio.currentTime = 0;
+      } catch (_error) {
+        // Some browsers block currentTime changes before metadata loads.
+      }
+    }
+  }
+  if (bgmFallback) bgmFallback.stop();
+}
+
+function startBgm() {
+  bgmRunning = true;
+  updateBgmToggleButton();
+  if (bgmMuted || document.hidden) return;
+  const audio = getBgmAudio();
+  if (!audio) {
+    getBgmFallback().start();
+    return;
+  }
+  audio.volume = JUMPMAP_BGM_VOLUME;
+  const maybePromise = audio.play();
+  if (maybePromise && typeof maybePromise.catch === 'function') {
+    maybePromise.catch(() => {
+      if (bgmRunning && !bgmMuted) getBgmFallback().start();
+    });
+  }
+}
+
+function stopBgm() {
+  bgmRunning = false;
+  pauseBgmOutput(true);
+  updateBgmToggleButton();
+}
+
+function toggleBgm() {
+  bgmMuted = !bgmMuted;
+  if (bgmMuted) {
+    pauseBgmOutput(false);
+  } else if (bgmRunning) {
+    startBgm();
+  }
+  updateBgmToggleButton();
 }
 
 function getAutoViewportProfile() {
@@ -424,6 +845,12 @@ function syncViewportProfile() {
   return profile;
 }
 
+function markRuntimeLayoutDirty() {
+  if (session?.runtime) {
+    session.runtime.canvasSizeDirty = true;
+  }
+}
+
 function clampSelectedPlayersToViewport(profile = syncViewportProfile()) {
   const nextPlayers = clamp(selectedPlayers, 1, profile.maxPlayers);
   if (nextPlayers === selectedPlayers) return false;
@@ -433,6 +860,7 @@ function clampSelectedPlayersToViewport(profile = syncViewportProfile()) {
 }
 
 function scheduleViewportUpdate() {
+  markRuntimeLayoutDirty();
   if (viewportUpdateRaf) return;
   viewportUpdateRaf = window.requestAnimationFrame(() => {
     viewportUpdateRaf = 0;
@@ -449,6 +877,7 @@ function scheduleViewportUpdate() {
 function selectNextDisplayMode() {
   const currentIndex = DISPLAY_MODES.findIndex((mode) => mode.id === selectedDisplayMode);
   selectedDisplayMode = DISPLAY_MODES[(currentIndex + 1 + DISPLAY_MODES.length) % DISPLAY_MODES.length]?.id || 'auto';
+  markRuntimeLayoutDirty();
   const profile = syncViewportProfile();
   if (!session) {
     clampSelectedPlayersToViewport(profile);
@@ -506,46 +935,704 @@ function getPlayerAccuracyText(player) {
   return `${percent}% (${correct}/${attempts})`;
 }
 
+function formatCsvAccuracy(correct, attempts) {
+  const safeCorrect = Math.max(0, Number(correct) || 0);
+  const safeAttempts = Math.max(0, Number(attempts) || 0);
+  return safeAttempts > 0 ? `${Math.round((safeCorrect / safeAttempts) * 1000) / 10}%` : '0%';
+}
+
+function formatFileTimestamp(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const second = String(date.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}-${hour}${minute}${second}`;
+}
+
+function formatCsvDateTime(date = new Date()) {
+  return date.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
+function escapeCsv(value) {
+  const text = String(value ?? '');
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function rowsToCsv(rows) {
+  return rows.map((row) => row.map(escapeCsv).join(',')).join('\n');
+}
+
+function parseCsvTable(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  const source = String(text || '').replace(/^\uFEFF/, '');
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (char === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (char !== '\r') {
+      cell += char;
+    }
+  }
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows.filter((items) => items.some((item) => String(item).trim()));
+}
+
+function csvRowsToObjects(text) {
+  const rows = parseCsvTable(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((header) => String(header || '').trim());
+  return rows.slice(1).map((row) => {
+    const record = {};
+    headers.forEach((header, index) => {
+      record[header] = row[index] ?? '';
+    });
+    return record;
+  });
+}
+
+function getCsvNumber(value) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getSafeStudentId(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^0-9A-Za-z_-]/g, '')
+    .slice(0, 24);
+}
+
+function getGugudanFact(question) {
+  const text = String(question?.text || question?.prompt || '').trim();
+  const match = text.match(/(\d+)\s*(?:x|×|\*)\s*(\d+)/i);
+  if (!match) return null;
+  const dan = Number(match[1]);
+  const multiplier = Number(match[2]);
+  if (!Number.isFinite(dan) || !Number.isFinite(multiplier)) return null;
+  return {
+    dan,
+    multiplier,
+    key: `${dan}x${multiplier}`,
+    expression: `${dan}x${multiplier}`
+  };
+}
+
+function createEmptyGugudanAggregate(fact) {
+  return {
+    dan: fact.dan,
+    multiplier: fact.multiplier,
+    expression: fact.expression,
+    attempts: 0,
+    correct: 0,
+    wrong: 0,
+    lastWrongAt: ''
+  };
+}
+
+function addGugudanAggregate(map, fact, values = {}) {
+  if (!fact?.key) return null;
+  if (!map.has(fact.key)) {
+    map.set(fact.key, createEmptyGugudanAggregate(fact));
+  }
+  const item = map.get(fact.key);
+  const correct = Math.max(0, Number(values.correct) || 0);
+  const wrong = Math.max(0, Number(values.wrong) || 0);
+  const attempts = Math.max(0, Number(values.attempts) || 0) || correct + wrong;
+  item.attempts += attempts;
+  item.correct += correct;
+  item.wrong += wrong;
+  if (values.lastWrongAt) item.lastWrongAt = String(values.lastWrongAt);
+  return item;
+}
+
+function createGugudanAggregateFromRecords(records = []) {
+  const factMap = new Map();
+  records.forEach((record) => {
+    const fact = {
+      dan: record.dan,
+      multiplier: record.multiplier,
+      key: record.factKey,
+      expression: record.expression
+    };
+    addGugudanAggregate(factMap, fact, {
+      attempts: 1,
+      correct: record.correct ? 1 : 0,
+      wrong: record.correct ? 0 : 1,
+      lastWrongAt: record.correct ? '' : record.answeredAt
+    });
+  });
+  return factMap;
+}
+
+function parseGugudanCsvAggregate(text) {
+  const rows = csvRowsToObjects(text);
+  const factMap = new Map();
+  const studentIds = new Set();
+  rows.forEach((row) => {
+    const studentId = String(row['학생번호'] || '').trim();
+    if (studentId) studentIds.add(studentId);
+    const rowType = String(row['행구분'] || '').trim();
+    const expression = String(row['식'] || row['문항'] || '').trim();
+    if (rowType && rowType !== '문항') return;
+    if (!expression) return;
+    const fact = getGugudanFact({ text: expression });
+    if (!fact) return;
+    addGugudanAggregate(factMap, fact, {
+      attempts: getCsvNumber(row['시도']),
+      correct: getCsvNumber(row['정답']),
+      wrong: getCsvNumber(row['오답']),
+      lastWrongAt: row['최근오답시각']
+    });
+  });
+  return { factMap, studentIds };
+}
+
+function getSortedGugudanFacts(factMap) {
+  return Array.from(factMap.values()).sort((left, right) => (
+    left.dan - right.dan || left.multiplier - right.multiplier
+  ));
+}
+
+function getGugudanDanSummary(factMap) {
+  const danMap = new Map();
+  getSortedGugudanFacts(factMap).forEach((item) => {
+    if (!danMap.has(item.dan)) {
+      danMap.set(item.dan, { dan: item.dan, attempts: 0, correct: 0, wrong: 0 });
+    }
+    const dan = danMap.get(item.dan);
+    dan.attempts += item.attempts;
+    dan.correct += item.correct;
+    dan.wrong += item.wrong;
+  });
+  return Array.from(danMap.values()).sort((left, right) => left.dan - right.dan);
+}
+
+function buildGugudanCsv(studentId, factMap, options = {}) {
+  const createdAt = options.createdAt || new Date();
+  const createdText = formatCsvDateTime(createdAt);
+  const minutes = options.minutes || session?.minutes || '';
+  const playedText = options.playedText || '';
+  const sourceLabel = options.sourceLabel || '구구단';
+  const rows = [[
+    '행구분',
+    '학생번호',
+    '생성일시',
+    '퀴즈팩',
+    '선택시간분',
+    '플레이시간',
+    '단',
+    '식',
+    '시도',
+    '정답',
+    '오답',
+    '정답률',
+    '최근오답시각'
+  ]];
+  getGugudanDanSummary(factMap).forEach((item) => {
+    rows.push([
+      '단요약',
+      studentId,
+      createdText,
+      sourceLabel,
+      minutes,
+      playedText,
+      `${item.dan}단`,
+      '',
+      item.attempts,
+      item.correct,
+      item.wrong,
+      formatCsvAccuracy(item.correct, item.attempts),
+      ''
+    ]);
+  });
+  getSortedGugudanFacts(factMap).forEach((item) => {
+    rows.push([
+      '문항',
+      studentId,
+      createdText,
+      sourceLabel,
+      minutes,
+      playedText,
+      `${item.dan}단`,
+      item.expression,
+      item.attempts,
+      item.correct,
+      item.wrong,
+      formatCsvAccuracy(item.correct, item.attempts),
+      item.lastWrongAt || ''
+    ]);
+  });
+  return rowsToCsv(rows);
+}
+
+function downloadCsvFile(filename, csvText) {
+  const blob = new Blob([`\uFEFF${csvText}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function getQrShareUrl() {
+  return QR_SHARE_URL;
+}
+
+function createQrSvg(text) {
+  const qrFactory = window.QRCodeGenerator;
+  if (typeof qrFactory !== 'function') return null;
+  const qr = qrFactory(text, {
+    typeNumber: -1,
+    errorCorrectLevel: qrFactory.ErrorCorrectLevel?.M || 0
+  });
+  const cells = Array.isArray(qr.modules) ? qr.modules : [];
+  const size = cells.length;
+  if (!size) return null;
+  const quiet = 4;
+  const viewSize = size + quiet * 2;
+  let pathData = '';
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      if (cells[row]?.[col]) pathData += `M${col + quiet} ${row + quiet}h1v1h-1z`;
+    }
+  }
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${viewSize} ${viewSize}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', '접속 QR 코드');
+  svg.classList.add('qr-svg');
+  const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  background.setAttribute('width', String(viewSize));
+  background.setAttribute('height', String(viewSize));
+  background.setAttribute('fill', '#ffffff');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', pathData);
+  path.setAttribute('fill', '#000000');
+  svg.append(background, path);
+  return svg;
+}
+
+function renderQrModal() {
+  if (!elements.qrLarge || !elements.qrUrlText) return;
+  const shareUrl = getQrShareUrl();
+  elements.qrLarge.innerHTML = '';
+  const svg = createQrSvg(shareUrl);
+  if (svg) {
+    elements.qrLarge.appendChild(svg);
+  } else {
+    const fallback = document.createElement('div');
+    fallback.className = 'qr-fallback';
+    fallback.textContent = 'QR을 만들 수 없습니다. 아래 주소를 직접 입력하세요.';
+    elements.qrLarge.appendChild(fallback);
+  }
+  elements.qrUrlText.textContent = shareUrl;
+}
+
+function openQrModal() {
+  if (!elements.qrModal) return;
+  renderQrModal();
+  elements.qrModal.classList.remove('is-hidden');
+  document.body.classList.add('qr-modal-open');
+}
+
+function closeQrModal() {
+  elements.qrModal?.classList.add('is-hidden');
+  document.body.classList.remove('qr-modal-open');
+}
+
+function recordGugudanAnswer(question, choice, correct, quiz) {
+  if (!session || session.packId !== 'gugudan' || session.players.length !== 1) return;
+  const fact = getGugudanFact(question);
+  if (!fact) return;
+  const startedAtMs = Number(quiz?.questionStartedAtMs) || 0;
+  session.gugudanRecords.push({
+    factKey: fact.key,
+    dan: fact.dan,
+    multiplier: fact.multiplier,
+    expression: fact.expression,
+    questionText: question?.text || '',
+    answer: String(question?.answer ?? ''),
+    selectedChoice: String(choice ?? ''),
+    correct: Boolean(correct),
+    responseMs: startedAtMs ? Math.max(0, Date.now() - startedAtMs) : 0,
+    answeredAt: formatCsvDateTime(new Date())
+  });
+}
+
+function isGugudanSoloRecordResult() {
+  return !!session && session.packId === 'gugudan' && session.players.length === 1;
+}
+
+function getCurrentGugudanFactMap() {
+  return createGugudanAggregateFromRecords(session?.gugudanRecords || []);
+}
+
+function getGugudanWeaknessText(factMap) {
+  const items = getSortedGugudanFacts(factMap);
+  const totalAttempts = items.reduce((sum, item) => sum + item.attempts, 0);
+  if (!totalAttempts) return '아직 저장할 구구단 풀이 기록이 없습니다.';
+  const weakItems = items
+    .filter((item) => item.wrong > 0)
+    .sort((left, right) => right.wrong - left.wrong || left.dan - right.dan || left.multiplier - right.multiplier)
+    .slice(0, 3);
+  if (!weakItems.length) return '이번 판 오답 없음 · 모든 풀이가 정답입니다.';
+  return `오답 확인: ${weakItems.map((item) => `${item.expression} (${item.wrong}회)`).join(', ')}`;
+}
+
+function setGugudanRecordStatus(message = '', kind = '') {
+  if (!elements.gugudanRecordStatus) return;
+  elements.gugudanRecordStatus.textContent = message;
+  elements.gugudanRecordStatus.classList.toggle('is-error', kind === 'error');
+  elements.gugudanRecordStatus.classList.toggle('is-success', kind === 'success');
+}
+
+function renderGugudanRecordPanel() {
+  const panel = elements.gugudanRecordPanel;
+  const resultModal = elements.resultScreen?.querySelector('.result-modal');
+  if (!panel) return;
+  const visible = isGugudanSoloRecordResult();
+  panel.classList.toggle('is-hidden', !visible);
+  resultModal?.classList.toggle('has-gugudan-record', visible);
+  if (!visible) {
+    setGugudanRecordStatus('');
+    return;
+  }
+
+  const factMap = getCurrentGugudanFactMap();
+  const hasRecords = factMap.size > 0;
+  const copy = panel.querySelector('.gugudan-record-copy p');
+  if (copy) {
+    copy.textContent = hasRecords
+      ? getGugudanWeaknessText(factMap)
+      : '문제를 1개 이상 풀면 기록을 저장할 수 있습니다. 학생번호는 앱 안에 저장하지 않습니다.';
+  }
+  if (elements.gugudanDownloadCurrentButton) elements.gugudanDownloadCurrentButton.disabled = !hasRecords;
+  if (elements.gugudanMergeCsvButton) elements.gugudanMergeCsvButton.disabled = !hasRecords;
+  setGugudanRecordStatus(hasRecords ? '이번 기록을 새로 저장하거나, 기존 기록 파일을 선택해 이어 저장할 수 있습니다.' : '저장할 구구단 풀이 기록이 없습니다.', hasRecords ? '' : 'error');
+}
+
+function getStudentIdForCsv() {
+  const rawValue = elements.gugudanStudentId?.value || '';
+  const studentId = getSafeStudentId(rawValue);
+  if (elements.gugudanStudentId) elements.gugudanStudentId.value = studentId;
+  if (!studentId) {
+    setGugudanRecordStatus('학생번호를 입력해야 기록을 저장할 수 있습니다.', 'error');
+    elements.gugudanStudentId?.focus();
+    return '';
+  }
+  return studentId;
+}
+
+function getGugudanCsvFilename(studentId, merged = false) {
+  return `gugudan-student-${studentId}${merged ? '-merged' : ''}-${formatFileTimestamp(new Date())}.csv`;
+}
+
+function getGugudanCsvOptions() {
+  const summary = session ? summarizeSession() : { playedSec: 0 };
+  return {
+    minutes: session?.minutes || '',
+    playedText: formatClock(summary.playedSec || 0),
+    sourceLabel: session?.packLabel || '구구단'
+  };
+}
+
+function downloadCurrentGugudanCsv() {
+  if (!isGugudanSoloRecordResult()) {
+    setGugudanRecordStatus('구구단 1인 플레이 결과에서만 기록을 저장할 수 있습니다.', 'error');
+    return;
+  }
+  const studentId = getStudentIdForCsv();
+  if (!studentId) return;
+  const factMap = getCurrentGugudanFactMap();
+  if (!factMap.size) {
+    setGugudanRecordStatus('저장할 구구단 풀이 기록이 없습니다.', 'error');
+    return;
+  }
+  const csvText = buildGugudanCsv(studentId, factMap, getGugudanCsvOptions());
+  downloadCsvFile(getGugudanCsvFilename(studentId), csvText);
+  setGugudanRecordStatus('이번 기록을 저장했습니다.', 'success');
+}
+
+async function loadPreviousGugudanCsv(file) {
+  if (!isGugudanSoloRecordResult() || !file) return;
+  const studentId = getStudentIdForCsv();
+  if (!studentId) return;
+  const currentMap = getCurrentGugudanFactMap();
+  if (!currentMap.size) {
+    setGugudanRecordStatus('합칠 이번 구구단 풀이 기록이 없습니다.', 'error');
+    return;
+  }
+
+  try {
+    const parsed = parseGugudanCsvAggregate(await file.text());
+    const mismatchedStudentIds = Array.from(parsed.studentIds).filter((id) => id !== studentId);
+    if (mismatchedStudentIds.length) {
+      setGugudanRecordStatus('학생번호가 다른 기록입니다. 같은 학생번호의 기록만 이어 저장할 수 있습니다.', 'error');
+      return;
+    }
+    if (!parsed.factMap.size) {
+      setGugudanRecordStatus('구구단 학습 기록을 찾을 수 없습니다.', 'error');
+      return;
+    }
+
+    const mergedMap = new Map(parsed.factMap);
+    mergeGugudanFactMap(mergedMap, currentMap);
+    const csvText = buildGugudanCsv(studentId, mergedMap, getGugudanCsvOptions());
+    downloadCsvFile(getGugudanCsvFilename(studentId, true), csvText);
+    setGugudanRecordStatus('기존 기록에 이번 기록을 이어 저장했습니다.', 'success');
+  } catch (_error) {
+    setGugudanRecordStatus('기록 파일을 읽지 못했습니다. 이 앱에서 받은 기록 파일인지 확인하세요.', 'error');
+  } finally {
+    if (elements.gugudanRecordFile) elements.gugudanRecordFile.value = '';
+  }
+}
+
+function getGugudanAggregateStats(factMap) {
+  const facts = getSortedGugudanFacts(factMap);
+  const total = facts.reduce((summary, item) => {
+    summary.attempts += item.attempts;
+    summary.correct += item.correct;
+    summary.wrong += item.wrong;
+    return summary;
+  }, { attempts: 0, correct: 0, wrong: 0 });
+  const weakFacts = facts
+    .filter((item) => item.wrong > 0)
+    .sort((left, right) => right.wrong - left.wrong || left.correct - right.correct || left.dan - right.dan || left.multiplier - right.multiplier)
+    .slice(0, 5);
+  const danSummary = getGugudanDanSummary(factMap)
+    .filter((item) => item.attempts > 0)
+    .sort((left, right) => right.wrong - left.wrong || left.correct - right.correct || left.dan - right.dan);
+  return {
+    ...total,
+    accuracy: formatCsvAccuracy(total.correct, total.attempts),
+    weakFacts,
+    weakDans: danSummary.slice(0, 3)
+  };
+}
+
+function renderGugudanStatusPanelError(message) {
+  if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  elements.gugudanStatusPanel.classList.remove('is-hidden', 'is-success');
+  elements.gugudanStatusPanel.classList.add('is-error');
+  elements.gugudanStatusContent.innerHTML = `
+    <div class="gugudan-status-head">
+      <b>내 구구단 상태</b>
+      <span>기록 확인</span>
+    </div>
+    <p class="gugudan-status-message">${escapeHtml(message)}</p>
+  `;
+}
+
+function renderGugudanStatusPanel(parsed, fileName = '', options = {}) {
+  if (!elements.gugudanStatusPanel || !elements.gugudanStatusContent) return;
+  if (!parsed?.factMap?.size) {
+    renderGugudanStatusPanelError('구구단 학습 기록을 찾을 수 없습니다.');
+    return;
+  }
+  const stats = getGugudanAggregateStats(parsed.factMap);
+  const studentIds = Array.from(parsed.studentIds).filter(Boolean);
+  const studentText = studentIds.length ? studentIds.join(', ') : '기록 없음';
+  const weakText = stats.weakFacts.length
+    ? stats.weakFacts.map((item) => `${item.expression} ${item.wrong}회`).join(' · ')
+    : '오답 기록 없음';
+  const danText = stats.weakDans.length
+    ? stats.weakDans.map((item) => `${item.dan}단 ${formatCsvAccuracy(item.correct, item.attempts)}`).join(' · ')
+    : '단별 기록 없음';
+
+  elements.gugudanStatusPanel.classList.remove('is-hidden', 'is-error');
+  elements.gugudanStatusPanel.classList.add('is-success');
+  elements.gugudanStatusContent.innerHTML = `
+    <div class="gugudan-status-head">
+      <b>${escapeHtml(options.title || '내 구구단 상태')}</b>
+      <span>${escapeHtml(fileName || '선택한 기록')}</span>
+    </div>
+    <div class="gugudan-status-grid">
+      <div><span>학생번호</span><b>${escapeHtml(studentText)}</b></div>
+      <div><span>누적 풀이</span><b>${escapeHtml(String(stats.attempts))}회</b></div>
+      <div><span>정답률</span><b>${escapeHtml(stats.accuracy)}</b></div>
+      <div><span>오답</span><b>${escapeHtml(String(stats.wrong))}회</b></div>
+    </div>
+    ${options.message ? `<p class="gugudan-status-message is-strong">${escapeHtml(options.message)}</p>` : ''}
+    <p class="gugudan-status-message">더 확인할 식: ${escapeHtml(weakText)}</p>
+    <p class="gugudan-status-message">단별 상태: ${escapeHtml(danText)}</p>
+  `;
+}
+
+async function loadGugudanStatusFile(file) {
+  if (!file) return;
+  try {
+    const parsed = parseGugudanCsvAggregate(await file.text());
+    renderGugudanStatusPanel(parsed, file.name || '');
+  } catch (_error) {
+    renderGugudanStatusPanelError('기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.');
+  } finally {
+    if (elements.gugudanStatusFile) elements.gugudanStatusFile.value = '';
+  }
+}
+
+function mergeGugudanFactMap(targetMap, sourceMap) {
+  sourceMap.forEach((item) => {
+    addGugudanAggregate(targetMap, {
+      dan: item.dan,
+      multiplier: item.multiplier,
+      key: `${item.dan}x${item.multiplier}`,
+      expression: item.expression
+    }, item);
+  });
+}
+
+async function mergeSelectedGugudanRecordFiles(files) {
+  const selectedFiles = Array.from(files || []);
+  if (selectedFiles.length < 2) {
+    renderGugudanStatusPanelError('합칠 기록 파일을 2개 이상 선택하세요.');
+    return;
+  }
+
+  const mergedMap = new Map();
+  const studentIds = new Set();
+  const invalidFileNames = [];
+  try {
+    const parsedFiles = await Promise.all(selectedFiles.map(async (file) => ({
+      file,
+      parsed: parseGugudanCsvAggregate(await file.text())
+    })));
+    parsedFiles.forEach(({ file, parsed }) => {
+      if (!parsed.factMap.size) {
+        invalidFileNames.push(file.name || '이름 없는 파일');
+        return;
+      }
+      parsed.studentIds.forEach((id) => {
+        if (id) studentIds.add(id);
+      });
+      mergeGugudanFactMap(mergedMap, parsed.factMap);
+    });
+  } catch (_error) {
+    renderGugudanStatusPanelError('기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.');
+    return;
+  } finally {
+    if (elements.gugudanMergeRecordsFile) elements.gugudanMergeRecordsFile.value = '';
+  }
+
+  if (invalidFileNames.length) {
+    renderGugudanStatusPanelError(`구구단 학습 기록을 찾을 수 없는 파일이 있습니다: ${invalidFileNames.join(', ')}`);
+    return;
+  }
+  if (!mergedMap.size) {
+    renderGugudanStatusPanelError('합칠 구구단 학습 기록을 찾을 수 없습니다.');
+    return;
+  }
+  if (studentIds.size !== 1) {
+    renderGugudanStatusPanelError('학생번호가 서로 다른 기록은 합칠 수 없습니다. 같은 학생번호의 파일만 선택하세요.');
+    return;
+  }
+
+  const studentId = Array.from(studentIds)[0];
+  const csvText = buildGugudanCsv(studentId, mergedMap, {
+    minutes: '',
+    playedText: '',
+    sourceLabel: '구구단'
+  });
+  const filename = getGugudanCsvFilename(studentId, true);
+  downloadCsvFile(filename, csvText);
+  renderGugudanStatusPanel({
+    factMap: mergedMap,
+    studentIds
+  }, filename, {
+    title: '구구단 기록 합치기',
+    message: `${selectedFiles.length}개 기록을 하나로 합쳐 저장했습니다.`
+  });
+}
+
 function showScreen(name) {
   document.body.dataset.screen = name;
   elements.setupScreen.classList.toggle('is-hidden', name !== 'setup');
   elements.playScreen.classList.toggle('is-hidden', name !== 'play');
   elements.resultScreen.classList.toggle('is-hidden', name !== 'result');
   updateFullscreenButtons();
-  syncTestDataset();
+  syncTestDataset({ force: true });
 }
 
-function syncTestDataset() {
-  document.body.dataset.knolquizScreen = document.body.dataset.screen || '';
+function syncTestDataset({ force = false } = {}) {
+  const bodyDataset = document.body.dataset;
+  setDatasetIfChanged(bodyDataset, 'knolquizScreen', bodyDataset.screen || '');
   if (!session) {
-    delete document.body.dataset.mapLoaded;
-    delete document.body.dataset.hitboxes;
-    delete document.body.dataset.playerX;
-    delete document.body.dataset.playerY;
-    delete document.body.dataset.playerSprite;
-    delete document.body.dataset.quizOpen;
-    delete document.body.dataset.quizOpenCount;
-    delete document.body.dataset.quizBatchIndex;
-    delete document.body.dataset.quizBatchSize;
-    delete document.body.dataset.playerViewCount;
-    delete document.body.dataset.character;
+    [
+      'mapLoaded',
+      'hitboxes',
+      'objects',
+      'playerX',
+      'playerY',
+      'playerSprite',
+      'quizOpen',
+      'quizOpenCount',
+      'quizBatchIndex',
+      'quizBatchSize',
+      'playerViewCount',
+      'character'
+    ].forEach((key) => deleteDatasetKey(bodyDataset, key));
     return;
   }
+  const now = performance.now();
+  if (
+    !force &&
+    session.runtime &&
+    now - (Number(session.runtime.lastDatasetSyncAt) || 0) < TEST_DATASET_SYNC_INTERVAL_MS
+  ) {
+    return;
+  }
+  if (session.runtime) session.runtime.lastDatasetSyncAt = now;
   syncSessionQuizCompatibility();
   const activePlayer = getActivePlayer();
-  document.body.dataset.mapLoaded = String(!!session.runtime.map);
-  document.body.dataset.hitboxes = String(session.runtime.summary.hitboxCount || 0);
-  document.body.dataset.objects = String(session.runtime.summary.objectCount || 0);
-  document.body.dataset.quizOpen = String(!!session.quizOpen);
-  document.body.dataset.quizOpenCount = String(session.players.filter((player) => player.quiz?.open).length);
-  document.body.dataset.quizBatchIndex = String(session.quizBatchIndex || 0);
-  document.body.dataset.quizBatchSize = String(session.quizBatchSize || QUIZ_BATCH_SIZE);
-  document.body.dataset.playerViewCount = String(session.players.length);
-  document.body.dataset.character = activePlayer?.character?.id || session.character?.id || '';
+  setDatasetIfChanged(bodyDataset, 'mapLoaded', !!session.runtime.map);
+  setDatasetIfChanged(bodyDataset, 'hitboxes', session.runtime.summary.hitboxCount || 0);
+  setDatasetIfChanged(bodyDataset, 'objects', session.runtime.summary.objectCount || 0);
+  setDatasetIfChanged(bodyDataset, 'quizOpen', !!session.quizOpen);
+  setDatasetIfChanged(bodyDataset, 'quizOpenCount', session.players.filter((player) => player.quiz?.open).length);
+  setDatasetIfChanged(bodyDataset, 'quizBatchIndex', session.quizBatchIndex || 0);
+  setDatasetIfChanged(bodyDataset, 'quizBatchSize', session.quizBatchSize || QUIZ_BATCH_SIZE);
+  setDatasetIfChanged(bodyDataset, 'playerViewCount', session.players.length);
+  setDatasetIfChanged(bodyDataset, 'character', activePlayer?.character?.id || session.character?.id || '');
   if (activePlayer) {
-    document.body.dataset.playerX = String(Math.round(activePlayer.state.x));
-    document.body.dataset.playerY = String(Math.round(activePlayer.state.y));
-    document.body.dataset.playerSprite = String(activePlayer.state._spriteSrc || '');
+    setDatasetIfChanged(bodyDataset, 'playerX', Math.round(activePlayer.state.x));
+    setDatasetIfChanged(bodyDataset, 'playerY', Math.round(activePlayer.state.y));
+    setDatasetIfChanged(bodyDataset, 'playerSprite', activePlayer.state._spriteSrc || '');
   }
 }
 
@@ -628,9 +1715,19 @@ function getImageEntry(src) {
     promise: null
   };
   entry.promise = new Promise((resolve) => {
-    image.onload = () => {
+    const finish = () => {
       entry.loaded = true;
       resolve(entry);
+    };
+    image.onload = () => {
+      if (typeof image.decode === 'function') {
+        Promise.race([
+          image.decode().catch(() => null),
+          delay(PRELOAD_IMAGE_DECODE_TIMEOUT_MS)
+        ]).then(finish);
+        return;
+      }
+      finish();
     };
     image.onerror = () => {
       entry.failed = true;
@@ -790,6 +1887,29 @@ function resolveQuizAssetPath(value) {
   return `./assets/quiz/nets/${source}`;
 }
 
+function collectQuizImageSources(questions) {
+  const sources = [];
+  (Array.isArray(questions) ? questions : []).forEach((question) => {
+    if (question?.hasQuestionImage && question.image) {
+      sources.push(question.image);
+    }
+    (Array.isArray(question?.choices) ? question.choices : []).forEach((choice) => {
+      if (isQuizImageAsset(choice)) sources.push(resolveQuizAssetPath(choice));
+    });
+  });
+  return [...new Set(sources.filter(Boolean))];
+}
+
+function collectResultBadgeImageSources() {
+  return [...new Set(HEIGHT_GRADE_TIERS.map((grade) => getHeightGradeImagePath(grade)).filter(Boolean))];
+}
+
+async function preloadQuizImages(questions) {
+  const sources = collectQuizImageSources(questions);
+  if (!sources.length) return;
+  await preloadImages(sources);
+}
+
 function normalizeJsonQuestions(payload) {
   const questions = Array.isArray(payload?.questions) ? payload.questions : [];
   return questions.map((question, index) => {
@@ -941,10 +2061,15 @@ function computePlayerSpawn(runtimeMap, summary, playerIndex = 0, playerCount = 
 }
 
 function getRuntimeObjects(map) {
-  return (Array.isArray(map?.objects) ? map.objects : []).map((object) => ({
-    ...object,
-    spriteSrc: resolveMapAssetPath(object.sprite, 'plate')
-  }));
+  return (Array.isArray(map?.objects) ? map.objects : []).map((object) => {
+    const spriteSrc = resolveMapAssetPath(object.sprite, 'plate');
+    const runtimeObject = {
+      ...object,
+      spriteSrc
+    };
+    runtimeObject.drawInfo = getObjectDrawInfo(runtimeObject, getLoadedImage(spriteSrc));
+    return runtimeObject;
+  });
 }
 
 function normalizeMapBackground(map) {
@@ -1039,6 +2164,7 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
     character: characters[0] || CHARACTERS[0],
     characters,
     characterSummary: getCharacterSummary(),
+    gugudanRecords: [],
     input: { left: false, right: false },
     keyboardPlayerIndex: -1,
     quizOpen: false,
@@ -1061,6 +2187,10 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
       lastTs: null,
       fixedAccumulator: 0,
       sidePanelSignature: '',
+      uiRefs: null,
+      canvasSizeCache: new WeakMap(),
+      canvasSizeDirty: true,
+      lastDatasetSyncAt: 0,
       camera: { x: 0, y: 0, width: 900, height: 620 },
       debugHitboxes: false,
       cleanup: []
@@ -1155,6 +2285,7 @@ function createPlayerQuizState() {
     batchIndex: 0,
     autoTimerId: 0,
     pending: false,
+    questionStartedAtMs: 0,
     feedback: '',
     feedbackKind: ''
   };
@@ -1402,6 +2533,7 @@ function nextQuestion(playerIndex = session?.quizPlayerIndex) {
     ...base,
     choices: shuffle(base.choices)
   };
+  quiz.questionStartedAtMs = Date.now();
   quiz.answerLocked = false;
   quiz.answered = false;
   quiz.selectedChoice = '';
@@ -1450,37 +2582,54 @@ function bindPlayerSelectors(root = elements.gameStage) {
   });
 }
 
+function collectStageUiRefs() {
+  if (!session) return null;
+  const playerRefs = session.players.map((_, index) => ({
+    gaugeValues: $$(`[data-player-gauge-value="${index}"]`, elements.gameStage),
+    gaugeFills: $$(`[data-player-gauge-fill="${index}"]`, elements.gameStage),
+    heights: $$(`[data-player-height="${index}"]`, elements.gameStage),
+    accuracies: $$(`[data-player-accuracy="${index}"]`, elements.gameStage),
+    heightRecords: $$(`[data-height-record="${index}"]`, elements.gameStage),
+    viewports: $$(`[data-player-viewport="${index}"]`, elements.gameStage)
+  }));
+  session.runtime.uiRefs = {
+    players: playerRefs,
+    quizButtons: $$('[data-quiz-player]', elements.gameStage)
+  };
+  return session.runtime.uiRefs;
+}
+
 function updateGaugeUi() {
   if (!session) return;
+  const uiRefs = session.runtime.uiRefs || collectStageUiRefs();
+  const now = performance.now();
   session.players.forEach((player, index) => {
+    const refs = uiRefs?.players?.[index] || {};
     const playerPercent = getGaugePercent(player);
-    $$(`[data-player-gauge-value="${index}"]`, elements.gameStage).forEach((element) => {
-      element.textContent = formatGauge(player.gauge || 0);
+    const gaugeText = formatGauge(player.gauge || 0);
+    const heightText = formatHeightMeters(player.bestHeight);
+    const accuracyText = getPlayerAccuracyText(player);
+    refs.gaugeValues?.forEach((element) => setTextIfChanged(element, gaugeText));
+    refs.gaugeFills?.forEach((element) => setWidthIfChanged(element, playerPercent));
+    refs.heights?.forEach((element) => setTextIfChanged(element, heightText));
+    refs.accuracies?.forEach((element) => setTextIfChanged(element, accuracyText));
+    refs.heightRecords?.forEach((element) => {
+      const active = Number(player.bestHeightNoticeUntil) > now;
+      setHiddenIfChanged(element, !active);
+      if (active) setTextIfChanged(element, `최고 높이 갱신 ${heightText}`);
     });
-    $$(`[data-player-gauge-fill="${index}"]`, elements.gameStage).forEach((element) => {
-      element.style.width = `${playerPercent}%`;
-    });
-    $$(`[data-player-height="${index}"]`, elements.gameStage).forEach((element) => {
-      element.textContent = formatHeightMeters(player.bestHeight);
-    });
-    $$(`[data-player-accuracy="${index}"]`, elements.gameStage).forEach((element) => {
-      element.textContent = getPlayerAccuracyText(player);
-    });
-    $$(`[data-height-record="${index}"]`, elements.gameStage).forEach((element) => {
-      const active = Number(player.bestHeightNoticeUntil) > performance.now();
-      element.hidden = !active;
-      if (active) element.textContent = `최고 높이 갱신 ${formatHeightMeters(player.bestHeight)}`;
-    });
-    $$(`[data-player-viewport="${index}"]`, elements.gameStage).forEach((element) => {
-      element.classList.toggle('is-active', index === session.activePlayerIndex);
-      element.classList.toggle('is-gauge-empty', playerPercent <= GAUGE_EPSILON);
+    refs.viewports?.forEach((element) => {
+      toggleClassIfChanged(element, 'is-active', index === session.activePlayerIndex);
+      toggleClassIfChanged(element, 'is-gauge-empty', playerPercent <= GAUGE_EPSILON);
     });
   });
-  $$('[data-quiz-player]', elements.gameStage).forEach((button) => {
+  uiRefs?.quizButtons?.forEach((button) => {
     const playerIndex = Number(button.dataset.quizPlayer) || 0;
     const player = getPlayerByIndex(playerIndex);
-    button.disabled = isPlayerQuizLocked(playerIndex)
-      || (isPlayerGaugeEmpty(player) && !isPlayerGroundedForQuiz(player));
+    setDisabledIfChanged(
+      button,
+      isPlayerQuizLocked(playerIndex) || (isPlayerGaugeEmpty(player) && !isPlayerGroundedForQuiz(player))
+    );
   });
 }
 
@@ -1529,6 +2678,8 @@ function renderStageShell() {
   session.runtime.contexts = session.runtime.canvases.map((canvas) => canvas.getContext('2d'));
   session.runtime.canvas = session.runtime.canvases[session.activePlayerIndex] || session.runtime.canvases[0] || null;
   session.runtime.ctx = session.runtime.canvas?.getContext('2d') || null;
+  session.runtime.canvasSizeDirty = true;
+  collectStageUiRefs();
   bindGaugeButton();
   bindPlayerSelectors();
   $$('[data-quiz-layer]', elements.gameStage).forEach((layer) => layer.addEventListener('pointerdown', (event) => {
@@ -1752,6 +2903,8 @@ function rectsIntersect(a, b, pad = 0) {
 
 function ensureCanvasSize(canvas = session?.runtime.canvas) {
   if (!canvas) return { width: 1, height: 1, dpr: 1 };
+  const cache = session?.runtime?.canvasSizeCache?.get(canvas);
+  if (cache && !session?.runtime?.canvasSizeDirty) return cache;
   const rect = canvas.getBoundingClientRect();
   const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
   const width = Math.max(1, Math.round(rect.width * dpr));
@@ -1760,7 +2913,9 @@ function ensureCanvasSize(canvas = session?.runtime.canvas) {
     canvas.width = width;
     canvas.height = height;
   }
-  return { width, height, cssWidth: Math.max(1, rect.width), cssHeight: Math.max(1, rect.height), dpr };
+  const size = { width, height, cssWidth: Math.max(1, rect.width), cssHeight: Math.max(1, rect.height), dpr };
+  session?.runtime?.canvasSizeCache?.set(canvas, size);
+  return size;
 }
 
 function computeCamera(canvasSize, player = getActivePlayer()) {
@@ -1819,7 +2974,7 @@ function drawMapObjects(ctx, camera, projector) {
   };
   for (const object of runtime.objects) {
     const image = getLoadedImage(object.spriteSrc);
-    const info = getObjectDrawInfo(object, image);
+    const info = object.drawInfo || (object.drawInfo = getObjectDrawInfo(object, image));
     if (!rectsIntersect(info.worldRect, cull)) continue;
     const worldX = Number(object.x) || 0;
     const worldY = Number(object.y) || 0;
@@ -2179,16 +3334,17 @@ function drawPlayers(ctx, camera, projector, viewPlayer = getActivePlayer()) {
 
 function drawScene() {
   if (!session?.runtime.contexts?.length) return;
+  const runtime = session.runtime;
   session.runtime.canvases.forEach((canvas, index) => {
-    const ctx = session.runtime.contexts[index];
+    const ctx = runtime.contexts[index];
     const viewPlayer = session.players[index] || getActivePlayer();
     if (!canvas || !ctx || !viewPlayer) return;
     const size = ensureCanvasSize(canvas);
     const camera = computeCamera(size, viewPlayer);
     if (index === session.activePlayerIndex) {
-      session.runtime.canvas = canvas;
-      session.runtime.ctx = ctx;
-      session.runtime.camera = camera;
+      runtime.canvas = canvas;
+      runtime.ctx = ctx;
+      runtime.camera = camera;
     }
     const projector = buildProjector(size, camera);
 
@@ -2199,6 +3355,7 @@ function drawScene() {
     drawDebugHitboxes(ctx, camera, projector);
     drawPlayers(ctx, camera, projector, viewPlayer);
   });
+  runtime.canvasSizeDirty = false;
   updateGaugeUi();
   renderSidePanelIfChanged();
   updateQuizActionState();
@@ -2259,11 +3416,13 @@ function stepPlayerPhysics(player, dt) {
   }
 
   if (gaugeBeforeStep <= GAUGE_EPSILON) {
-    state.input.left = false;
-    state.input.right = false;
-    if (player.control) {
-      player.control.left = false;
-      player.control.right = false;
+    if (wasOnGround) {
+      state.input.left = false;
+      state.input.right = false;
+      if (player.control) {
+        player.control.left = false;
+        player.control.right = false;
+      }
     }
     clearPlayerJumpInput(player);
     if (!player.gaugeEmptyNotified || wasOnGround) notifyGaugeEmpty(player);
@@ -2503,6 +3662,7 @@ function submitAnswer(choice, playerIndex = session?.quizPlayerIndex) {
   quiz.answerLocked = true;
   const activePlayer = getPlayerByIndex(safeIndex);
   const correct = choice === String(quiz.currentQuestion.answer);
+  recordGugudanAnswer(quiz.currentQuestion, choice, correct, quiz);
   applyAnswerToGame(activePlayer, correct, quiz);
   quiz.answered = true;
   quiz.selectedChoice = choice;
@@ -2655,6 +3815,7 @@ function bindRuntimeInput() {
 
 function cleanupRuntime() {
   if (!session) return;
+  stopBgm();
   clearQuizAutoTimer();
   stopGameLoop();
   session.runtime.cleanup.forEach((cleanup) => {
@@ -2702,19 +3863,44 @@ async function preloadRuntimeAssets(mapBundle, charactersInput) {
 }
 
 async function startSelectedGame() {
+  const loadingStartedAt = performance.now();
+  let startError = '';
   elements.setupError.textContent = '';
   if (!selectedMinutes) {
     elements.setupError.textContent = '플레이 시간을 선택하세요.';
     return;
   }
-  elements.startButton.disabled = true;
+  startBgm();
+  const loadingCharacterPreview = getLoadingCharacterFromSelection();
+  setStartLoadingState(true, '게임 자료를 미리 불러오는 중입니다.', {
+    progress: 0.14,
+    character: loadingCharacterPreview
+  });
   try {
     const [questions, mapBundle] = await Promise.all([
       loadPack(selectedPackId),
       loadMap(selectedMapId)
     ]);
     const runtimeCharacters = getSelectedCharacters(selectedPlayers);
-    await preloadRuntimeAssets(mapBundle, runtimeCharacters);
+    const loadingCharacter = runtimeCharacters[0] || loadingCharacterPreview;
+    setStartLoadingState(true, '이미지를 미리 불러와 플레이 중 끊김을 줄이는 중입니다.', {
+      progress: 0.52,
+      character: loadingCharacter
+    });
+    await Promise.all([
+      preloadRuntimeAssets(mapBundle, runtimeCharacters),
+      preloadQuizImages(questions),
+      preloadImages(collectResultBadgeImageSources())
+    ]);
+    setStartLoadingState(true, '곧 시작합니다.', {
+      progress: 0.94,
+      character: loadingCharacter
+    });
+    await keepMinimumLoadingTime(loadingStartedAt);
+    setStartLoadingState(true, '출발합니다.', {
+      progress: 1,
+      character: loadingCharacter
+    });
     session = buildSession({ questions, mapBundle, characters: runtimeCharacters });
     showScreen('play');
     renderPlay();
@@ -2722,8 +3908,10 @@ async function startSelectedGame() {
     startGameLoop();
     startTimer();
   } catch (error) {
-    elements.setupError.textContent = error instanceof Error ? error.message : '시작할 수 없습니다.';
+    startError = error instanceof Error ? error.message : '시작할 수 없습니다.';
+    stopBgm();
   } finally {
+    setStartLoadingState(false, startError);
     updateSetupSummary();
   }
 }
@@ -2763,8 +3951,8 @@ function renderResult() {
   const profile = syncViewportProfile();
   const totalAttempts = summary.totalCorrect + summary.totalWrong;
   const accuracy = totalAttempts > 0 ? Math.round((summary.totalCorrect / totalAttempts) * 100) : 0;
-  elements.resultTitle.textContent = '사용자별 점프 결과';
-  elements.resultSubtitle.textContent = `${session.packLabel} · ${session.mapLabel} · ${getPlayerCountLabel(session.players.length, profile)} · ${formatClock(summary.playedSec)}`;
+  elements.resultTitle.textContent = '점프 결과';
+  elements.resultSubtitle.textContent = `퀴즈 ${session.packLabel} · ${session.mapLabel} · ${getPlayerCountLabel(session.players.length, profile)} · ${formatClock(summary.playedSec)}`;
   elements.resultTimePill.textContent = '결과';
   elements.resultGrid.innerHTML = `
     <div class="result-summary-heading">전체 요약</div>
@@ -2822,38 +4010,43 @@ function renderResult() {
     const heightTitle = getHeightTitleForPlayer(player, heightGrade);
     return `
     <div class="player-result-card" data-result-player="${index}" style="--player-color: ${escapeHtml(player.labelColor)}">
-      <div class="player-card-head">
-        <span>${escapeHtml(player.name)}</span>
-        <strong>${escapeHtml(player.character?.label || '캐릭터')}</strong>
-        <em>높이 ${rank}위</em>
-      </div>
-      <div class="player-card-session">플레이 ${escapeHtml(formatClock(summary.playedSec))}</div>
-      <div class="player-scoreplate jump-scoreplate">
-        <b>최고 높이</b>
-        <strong>${escapeHtml(formatHeightMeters(player.bestHeight))}</strong>
-        <span>정답률 ${escapeHtml(getPlayerAccuracyText(player))}</span>
-      </div>
-      <div class="player-grade-badge" data-grade-key="${escapeHtml(heightGrade.imageKey)}" aria-label="등급 ${escapeHtml(heightTitle.title)}">
-        <div class="grade-badge-mark" aria-hidden="true">
-          <img src="${escapeHtml(getHeightGradeImagePath(heightGrade))}" alt="" loading="eager" decoding="async">
+      <div class="player-result-content">
+        <div class="player-card-head">
+          <span>${escapeHtml(player.name)}</span>
+          <strong>${escapeHtml(player.character?.label || '캐릭터')}</strong>
+          <em>개인 결과</em>
         </div>
-        <div>
-          <span>등급</span>
-          <strong>${escapeHtml(heightTitle.title)}</strong>
-          <em>${escapeHtml(heightTitle.caption)}</em>
+        <div class="player-result-hero">
+          <div class="player-title-panel" data-grade-key="${escapeHtml(heightGrade.imageKey)}" aria-label="칭호 ${escapeHtml(heightTitle.title)}">
+            <div class="grade-badge-mark" aria-hidden="true">
+              <img src="${escapeHtml(getHeightGradeImagePath(heightGrade))}" alt="" loading="eager" decoding="async">
+            </div>
+            <div>
+              <span>칭호</span>
+              <strong>${escapeHtml(heightTitle.title)}</strong>
+              <em>${escapeHtml(heightTitle.caption)}</em>
+            </div>
+          </div>
+          <div class="player-height-panel">
+            <span>최고 높이</span>
+            <strong>${escapeHtml(formatHeightMeters(player.bestHeight))}</strong>
+            <em>높이 ${rank}위</em>
+          </div>
         </div>
+        <div class="player-support-line">
+          <span>퀴즈 <b>${escapeHtml(session.packLabel)}</b></span>
+          <span>정답률 <b>${escapeHtml(getPlayerAccuracyText(player))}</b></span>
+          <span>플레이 <b>${escapeHtml(formatClock(summary.playedSec))}</b></span>
+        </div>
+        <div class="player-height-meter" aria-hidden="true"><i style="width: ${heightPercent}%"></i></div>
+        <div class="player-accuracy-meter" aria-hidden="true"><i style="width: ${playerAccuracy}%"></i></div>
       </div>
-      <div class="player-card-main">
-        <div><b>${formatClock(summary.playedSec)}</b><span>플레이 시간</span></div>
-        <div><b>${playerAccuracy}% (${player.correct}/${attempts})</b><span>정답률</span></div>
-      </div>
-      <div class="player-height-meter" aria-hidden="true"><i style="width: ${heightPercent}%"></i></div>
-      <div class="player-accuracy-meter" aria-hidden="true"><i style="width: ${playerAccuracy}%"></i></div>
     </div>
     ${index === 0 ? faceResultCenterHtml : ''}
     `;
   }).join('')}
   `;
+  renderGugudanRecordPanel();
 }
 
 function finishSession() {
@@ -2969,7 +4162,34 @@ function bindEvents() {
   });
 
   elements.startButton.addEventListener('click', startSelectedGame);
+  elements.bgmToggleButton?.addEventListener('click', toggleBgm);
   elements.backSetupButton.addEventListener('click', abandonSession);
+  elements.gugudanStatusButton?.addEventListener('click', () => {
+    if (!elements.gugudanStatusFile) return;
+    elements.gugudanStatusFile.value = '';
+    elements.gugudanStatusFile.click();
+  });
+  elements.gugudanStatusFile?.addEventListener('change', () => {
+    loadGugudanStatusFile(elements.gugudanStatusFile.files?.[0]);
+  });
+  elements.gugudanMergeRecordsButton?.addEventListener('click', () => {
+    if (!elements.gugudanMergeRecordsFile) return;
+    elements.gugudanMergeRecordsFile.value = '';
+    elements.gugudanMergeRecordsFile.click();
+  });
+  elements.gugudanMergeRecordsFile?.addEventListener('change', () => {
+    mergeSelectedGugudanRecordFiles(elements.gugudanMergeRecordsFile.files);
+  });
+  elements.gugudanDownloadCurrentButton?.addEventListener('click', downloadCurrentGugudanCsv);
+  elements.gugudanMergeCsvButton?.addEventListener('click', () => {
+    if (!getStudentIdForCsv()) return;
+    if (!elements.gugudanRecordFile) return;
+    elements.gugudanRecordFile.value = '';
+    elements.gugudanRecordFile.click();
+  });
+  elements.gugudanRecordFile?.addEventListener('change', () => {
+    loadPreviousGugudanCsv(elements.gugudanRecordFile.files?.[0]);
+  });
   document.addEventListener('click', (event) => {
     const button = event.target.closest('[data-action]');
     if (!button) return;
@@ -2986,6 +4206,14 @@ function bindEvents() {
       finishSession();
       return;
     }
+    if (action === 'open-qr') {
+      openQrModal();
+      return;
+    }
+    if (action === 'close-qr') {
+      closeQrModal();
+      return;
+    }
     if (action === 'enter-fullscreen') {
       enterFullscreen();
       return;
@@ -2994,8 +4222,19 @@ function bindEvents() {
       exitFullscreen();
     }
   });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeQrModal();
+  });
   document.addEventListener('fullscreenchange', updateFullscreenButtons);
   document.addEventListener('webkitfullscreenchange', updateFullscreenButtons);
+  document.addEventListener('visibilitychange', () => {
+    if (!bgmRunning) return;
+    if (document.hidden || bgmMuted) {
+      pauseBgmOutput(false);
+      return;
+    }
+    startBgm();
+  });
   window.addEventListener('resize', scheduleViewportUpdate);
   window.addEventListener('orientationchange', scheduleViewportUpdate);
   elements.restartSameButton.addEventListener('click', async () => {
@@ -3009,3 +4248,4 @@ function bindEvents() {
 
 renderSetupControls();
 bindEvents();
+updateBgmToggleButton();

@@ -4,10 +4,42 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>놀퀴즈:점프맵</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260601-gugudan-record-merge" />
   </head>
   <body class="theme-jumpmap">
     <button class="display-mode-toggle" type="button" id="display-mode-toggle" aria-label="화면 모드 전환">모드:자동</button>
+    <section class="jump-loading-screen" id="jump-loading-screen" aria-live="polite" aria-label="점프맵 로딩" hidden>
+      <div class="jump-loading-card">
+        <div class="jump-loading-copy">
+          <span class="jump-loading-kicker">놀퀴즈:점프맵</span>
+          <h2 id="jump-loading-title">점프맵 로딩 중</h2>
+          <p id="jump-loading-message">캐릭터와 맵 데이터를 준비하고 있어요.</p>
+        </div>
+        <div class="jump-loading-mode" aria-live="polite">
+          <strong id="jump-loading-mode-title">현재 모드</strong>
+          <p id="jump-loading-mode-text">점프맵 규칙을 정리하는 중입니다.</p>
+        </div>
+        <ul class="jump-loading-tips">
+          <li>방향키 + 점프키로 최대한 높은 곳에 도달해 보세요.</li>
+          <li>점프 중에도 방향키로 착지 위치를 조절할 수 있어요.</li>
+          <li>퀴즈 풀기에서 이동에 필요한 체력을 채울 수 있어요.</li>
+          <li>더블 점프가 가능합니다.</li>
+        </ul>
+        <section class="jump-loading-fact" id="jump-loading-fact" aria-live="polite">
+          <div class="jump-loading-fact-label" id="jump-loading-fact-label">역사 이야기</div>
+          <p id="jump-loading-fact-text">역사 정보를 준비하고 있어요.</p>
+          <div class="jump-loading-fact-source" id="jump-loading-fact-source">출처: 놀퀴즈</div>
+        </section>
+        <div class="jump-loading-stage" aria-hidden="true">
+          <div class="jump-loading-sky"></div>
+          <div class="jump-loading-path"></div>
+          <img class="jump-loading-sprite" id="jump-loading-sprite" src="./assets/characters/sejong/sejong_walk1.png" alt="" />
+        </div>
+        <div class="jump-loading-progress" aria-hidden="true">
+          <i id="jump-loading-progress-fill"></i>
+        </div>
+      </div>
+    </section>
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
@@ -17,6 +49,7 @@
         <div class="topbar-right">
           <div class="session-badge">발판을 딛고 정상까지</div>
           <div class="topbar-actions" aria-label="화면 조작">
+            <button class="ghost-action compact-action qr-open-action" type="button" data-action="open-qr">QR</button>
             <button class="ghost-action compact-action" type="button" data-action="enter-fullscreen">전체화면</button>
             <button class="ghost-action compact-action" type="button" data-action="exit-fullscreen" hidden>전체화면 해제</button>
           </div>
@@ -79,6 +112,22 @@
                 <div class="character-grid" id="character-options" aria-label="사용자별 캐릭터 선택"></div>
               </div>
 
+              <section class="gugudan-status-check" aria-label="내 구구단 상태 확인">
+                <div class="gugudan-status-copy">
+                  <b>구구단 누적 상태</b>
+                  <p>저장해 둔 기록 파일을 열어 상태를 확인하거나 여러 파일을 하나로 합칩니다.</p>
+                </div>
+                <div class="gugudan-status-actions">
+                  <button class="ghost-action gugudan-status-action" type="button" id="gugudan-status-button">내 구구단 상태 확인</button>
+                  <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">기록 합치기</button>
+                </div>
+                <input class="is-hidden" id="gugudan-status-file" type="file" accept=".csv,text/csv" />
+                <input class="is-hidden" id="gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
+                <section class="gugudan-status-panel is-hidden" id="gugudan-status-panel" aria-live="polite" aria-label="내 구구단 상태">
+                  <div id="gugudan-status-content"></div>
+                </section>
+              </section>
+
               <div class="setup-actions">
                 <button class="primary-action start-action" type="button" id="start-button" disabled>도전 시작</button>
                 <div class="error-text" id="setup-error" role="alert"></div>
@@ -95,6 +144,7 @@
             <div class="play-title" id="play-title">놀퀴즈:점프맵</div>
             <div class="play-status-actions">
               <div class="timer-pill" id="timer-pill">00:00</div>
+              <button class="ghost-action compact-action audio-action" type="button" id="bgm-toggle-button" aria-pressed="false">음악 끄기</button>
               <button class="ghost-action compact-action" type="button" data-action="enter-fullscreen">전체화면</button>
               <button class="ghost-action compact-action" type="button" data-action="exit-fullscreen" hidden>전체화면 해제</button>
             </div>
@@ -122,6 +172,22 @@
             </div>
             <div class="player-results" id="player-results"></div>
             <div class="result-grid" id="result-grid"></div>
+            <section class="gugudan-record-panel is-hidden" id="gugudan-record-panel" aria-label="구구단 학습 기록 저장">
+              <div class="gugudan-record-copy">
+                <b>구구단 학습 기록</b>
+                <p>학생번호는 저장 파일에만 들어가며, 앱 안에는 저장하지 않습니다.</p>
+              </div>
+              <label class="gugudan-student-field" for="gugudan-student-id">
+                학생번호
+                <input id="gugudan-student-id" type="text" inputmode="numeric" autocomplete="off" placeholder="예: 12" maxlength="24" />
+              </label>
+              <div class="gugudan-record-actions">
+                <button class="primary-action" type="button" id="gugudan-download-current-button">이번 기록 저장하기</button>
+                <button class="ghost-action" type="button" id="gugudan-merge-csv-button">기존 기록에 이어 저장하기</button>
+                <input class="is-hidden" id="gugudan-record-file" type="file" accept=".csv,text/csv" />
+              </div>
+              <div class="gugudan-record-status" id="gugudan-record-status" role="status"></div>
+            </section>
             <div class="result-actions">
               <button class="primary-action" type="button" id="restart-same-button">다시 시작</button>
               <button class="ghost-action" type="button" id="back-setup-button">메인화면</button>
@@ -129,6 +195,21 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div class="qr-modal is-hidden" id="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
+      <button class="qr-modal-backdrop" type="button" data-action="close-qr" aria-label="QR 닫기"></button>
+      <section class="qr-modal-card">
+        <div class="qr-modal-head">
+          <div>
+            <span class="screen-kicker">QR</span>
+            <h2 id="qr-modal-title">접속 QR</h2>
+          </div>
+          <button class="ghost-action compact-action" type="button" data-action="close-qr">닫기</button>
+        </div>
+        <div class="qr-large" id="qr-large" aria-label="접속 QR 코드"></div>
+        <p class="qr-url-text" id="qr-url-text"></p>
+      </section>
     </div>
 
     <script>
@@ -161,6 +242,7 @@
         }
       })();
     </script>
-    <script type="module" src="./app.js"></script>
+    <script src="./assets/vendor/qr-js.js?v=20260601-gugudan-record-merge"></script>
+    <script type="module" src="./app.js?v=20260601-gugudan-record-merge"></script>
   </body>
 </html>
