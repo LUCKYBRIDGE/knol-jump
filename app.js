@@ -46,14 +46,37 @@ const MAX_PHYSICS_STEPS_PER_FRAME = 6;
 const WALK_FRAME_INTERVAL_SEC = 0.12;
 const SPRITE_GROUND_LATCH_SEC = 0.12;
 const SPRITE_MOVE_LATCH_SEC = 0.08;
+const SPRITE_GROUND_PROBE_INTERVAL_SEC = 1 / 30;
 const LANDING_DUST_LIFE_SEC = 0.46;
 const LANDING_DUST_MAX_PARTICLES = 28;
 const BEST_HEIGHT_NOTICE_MS = 1100;
+const PLAY_UI_UPDATE_INTERVAL_MS = 90;
+const QUIZ_ACTION_UPDATE_INTERVAL_MS = 90;
 const TEST_DATASET_SYNC_INTERVAL_MS = 250;
-const MIN_START_LOADING_MS = 1500;
+const MAP_OBJECT_DRAW_BIN_SIZE = 520;
+const MAP_OBJECT_CHUNK_SIZE = 512;
+const MAP_OBJECT_CHUNK_CACHE_LIMIT = 32;
+const MAP_OBJECT_CHUNK_MAX_PROJECTOR_SCALE = 1.08;
+const MAP_OBJECT_CHUNK_PREPARE_BUDGET_MS = 5;
+const MAP_OBJECT_CHUNK_QUEUE_LIMIT = 72;
+const MAP_OBJECT_CHUNK_AHEAD_WIDTH = 2200;
+const MAP_OBJECT_CHUNK_AHEAD_HEIGHT = 3600;
+const RENDER_SCALE_MIN = 0.72;
+const RENDER_SCALE_MAX = 1;
+const RENDER_SCALE_DROP_STEP = 0.1;
+const RENDER_SCALE_RECOVER_STEP = 0.05;
+const RENDER_PERF_SAMPLE_MS = 1400;
+const RENDER_PERF_RECOVER_MS = 4200;
+const RENDER_SLOW_FRAME_MS = 26;
+const RENDER_VERY_SLOW_FRAME_MS = 38;
+const RENDER_STABLE_FRAME_MS = 17.5;
+const IDLE_PHYSICS_SPEED_EPS = 0.02;
+const MIN_START_LOADING_MS = 2800;
 const LOADING_SPRITE_FRAME_MS = 120;
 const LOADING_FACT_ROTATE_MS = 4600;
 const PRELOAD_IMAGE_DECODE_TIMEOUT_MS = 450;
+const PRELOAD_IMAGE_CONCURRENCY = 3;
+const PRELOAD_IMAGE_YIELD_EVERY = 6;
 const JUMPMAP_BGM_SRC = './assets/music/viacheslavstarostin-game-gaming-video-game-music-471936.mp3';
 const JUMPMAP_BGM_VOLUME = 0.45;
 const PLAYER_LABEL_COLORS = ['#38bdf8', '#f97316', '#22c55e', '#d946ef'];
@@ -67,6 +90,9 @@ const RANDOM_CHARACTER_OPTION = {
   id: RANDOM_CHARACTER_ID,
   label: '랜덤'
 };
+const MAP_CANVAS_CONTEXT_OPTIONS = Object.freeze({});
+const BACKGROUND_CANVAS_CONTEXT_OPTIONS = Object.freeze({ alpha: false, desynchronized: true });
+const CHUNK_CANVAS_CONTEXT_OPTIONS = Object.freeze({ alpha: true, desynchronized: true });
 
 const QUIZ_PACKS = [
   {
@@ -555,6 +581,25 @@ function setDisabledIfChanged(element, disabled) {
 function delay(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, Math.max(0, Number(ms) || 0));
+  });
+}
+
+function getCanvasContext2d(canvas, options = {}) {
+  if (!canvas) return null;
+  try {
+    return canvas.getContext('2d', options);
+  } catch (_error) {
+    return canvas.getContext('2d');
+  }
+}
+
+function yieldToBrowser() {
+  return new Promise((resolve) => {
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => resolve(), { timeout: 80 });
+      return;
+    }
+    window.requestAnimationFrame(() => resolve());
   });
 }
 
@@ -2271,7 +2316,9 @@ function syncTestDataset({ force = false } = {}) {
       'quizBatchIndex',
       'quizBatchSize',
       'playerViewCount',
-      'character'
+      'character',
+      'renderScale',
+      'renderQuality'
     ].forEach((key) => deleteDatasetKey(bodyDataset, key));
     return;
   }
@@ -2295,6 +2342,12 @@ function syncTestDataset({ force = false } = {}) {
   setDatasetIfChanged(bodyDataset, 'quizBatchSize', session.quizBatchSize || QUIZ_BATCH_SIZE);
   setDatasetIfChanged(bodyDataset, 'playerViewCount', session.players.length);
   setDatasetIfChanged(bodyDataset, 'character', activePlayer?.character?.id || session.character?.id || '');
+  setDatasetIfChanged(bodyDataset, 'renderScale', Number(session.runtime.renderScale || RENDER_SCALE_MAX).toFixed(2));
+  setDatasetIfChanged(
+    bodyDataset,
+    'renderQuality',
+    (Number(session.runtime.renderScale) || RENDER_SCALE_MAX) < RENDER_SCALE_MAX ? 'adaptive' : 'full'
+  );
   if (activePlayer) {
     setDatasetIfChanged(bodyDataset, 'playerX', Math.round(activePlayer.state.x));
     setDatasetIfChanged(bodyDataset, 'playerY', Math.round(activePlayer.state.y));
@@ -2412,9 +2465,32 @@ function getLoadedImage(src) {
   return entry?.loaded ? entry.image : null;
 }
 
-async function preloadImages(sources) {
+async function preloadImages(sources, options = {}) {
   const unique = [...new Set(sources.filter(Boolean))];
-  await Promise.all(unique.map((src) => getImageEntry(src)?.promise));
+  if (!unique.length) return { total: 0, loaded: 0 };
+  const concurrency = clamp(
+    Math.round(Number(options.concurrency) || PRELOAD_IMAGE_CONCURRENCY),
+    1,
+    Math.max(1, unique.length)
+  );
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+  let cursor = 0;
+  let loaded = 0;
+  const worker = async () => {
+    while (cursor < unique.length) {
+      const src = unique[cursor];
+      cursor += 1;
+      const entry = getImageEntry(src);
+      if (entry?.promise) await entry.promise;
+      loaded += 1;
+      if (onProgress) onProgress(loaded, unique.length);
+      if (loaded % PRELOAD_IMAGE_YIELD_EVERY === 0) {
+        await yieldToBrowser();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  return { total: unique.length, loaded };
 }
 
 function updateSetupSummary() {
@@ -2572,10 +2648,10 @@ function collectResultBadgeImageSources() {
   return [...new Set(HEIGHT_GRADE_TIERS.map((grade) => getHeightGradeImagePath(grade)).filter(Boolean))];
 }
 
-async function preloadQuizImages(questions) {
+async function preloadQuizImages(questions, options = {}) {
   const sources = collectQuizImageSources(questions);
   if (!sources.length) return;
-  await preloadImages(sources);
+  await preloadImages(sources, options);
 }
 
 function normalizeJsonQuestions(payload) {
@@ -2742,6 +2818,63 @@ function getRuntimeObjects(map) {
   });
 }
 
+function buildMapObjectDrawBins(objects) {
+  const bins = new Map();
+  (Array.isArray(objects) ? objects : []).forEach((object, index) => {
+    const rect = object?.drawInfo?.worldRect;
+    if (!rect) return;
+    const startBin = Math.floor((Number(rect.y) || 0) / MAP_OBJECT_DRAW_BIN_SIZE);
+    const endBin = Math.floor(((Number(rect.y) || 0) + Math.max(1, Number(rect.height) || 1)) / MAP_OBJECT_DRAW_BIN_SIZE);
+    for (let bin = startBin; bin <= endBin; bin += 1) {
+      if (!bins.has(bin)) bins.set(bin, []);
+      bins.get(bin).push(index);
+    }
+  });
+  return bins;
+}
+
+function buildMapObjectChunkIndex(objects) {
+  const chunks = new Map();
+  (Array.isArray(objects) ? objects : []).forEach((object, index) => {
+    const rect = object?.drawInfo?.worldRect;
+    if (!rect) return;
+    const x = Number(rect.x) || 0;
+    const y = Number(rect.y) || 0;
+    const width = Math.max(1, Number(rect.width) || 1);
+    const height = Math.max(1, Number(rect.height) || 1);
+    const startCol = Math.floor(x / MAP_OBJECT_CHUNK_SIZE);
+    const endCol = Math.floor((x + width) / MAP_OBJECT_CHUNK_SIZE);
+    const startRow = Math.floor(y / MAP_OBJECT_CHUNK_SIZE);
+    const endRow = Math.floor((y + height) / MAP_OBJECT_CHUNK_SIZE);
+    for (let row = startRow; row <= endRow; row += 1) {
+      for (let col = startCol; col <= endCol; col += 1) {
+        const key = `${col},${row}`;
+        if (!chunks.has(key)) chunks.set(key, []);
+        chunks.get(key).push(index);
+      }
+    }
+  });
+  return chunks;
+}
+
+function getVisibleMapObjects(runtime, cull) {
+  const objects = Array.isArray(runtime?.objects) ? runtime.objects : [];
+  const bins = runtime?.objectDrawBins;
+  if (!bins?.size) return objects;
+  const startBin = Math.floor((Number(cull.y) || 0) / MAP_OBJECT_DRAW_BIN_SIZE);
+  const endBin = Math.floor(((Number(cull.y) || 0) + Math.max(1, Number(cull.height) || 1)) / MAP_OBJECT_DRAW_BIN_SIZE);
+  const indices = new Set();
+  for (let bin = startBin; bin <= endBin; bin += 1) {
+    const list = bins.get(bin);
+    if (!list) continue;
+    list.forEach((index) => indices.add(index));
+  }
+  return [...indices]
+    .sort((a, b) => a - b)
+    .map((index) => objects[index])
+    .filter(Boolean);
+}
+
 function normalizeMapBackground(map) {
   const background = map?.background && typeof map.background === 'object' ? map.background : {};
   return {
@@ -2858,6 +2991,14 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
       physics: getTunedRuntimePhysics(runtimeMap.physics || {}),
       moveSpeed: getRuntimeMoveSpeed(runtimeMap),
       objects,
+      objectDrawBins: buildMapObjectDrawBins(objects),
+      objectChunkIndex: buildMapObjectChunkIndex(objects),
+      objectChunkCache: new Map(),
+      objectChunkPrepareQueue: [],
+      objectChunkPrepareQueued: new Set(),
+      objectChunkPrepareHandle: 0,
+      playerSpriteRenderCache: new Map(),
+      playerLabelCache: new Map(),
       background,
       obstacles,
       canvas: null,
@@ -2871,6 +3012,20 @@ function buildSession({ questions, mapBundle, characters: runtimeCharacters = nu
       uiRefs: null,
       canvasSizeCache: new WeakMap(),
       canvasSizeDirty: true,
+      renderScale: RENDER_SCALE_MAX,
+      renderPerf: {
+        sampleStartedAt: 0,
+        sampleCount: 0,
+        sampleTotalMs: 0,
+        sampleMaxMs: 0,
+        stableStartedAt: 0
+      },
+      lastSceneRenderSignature: '',
+      backgroundCache: new Map(),
+      touchPointers: new Map(),
+      touchButtonCounts: new WeakMap(),
+      lastUiUpdateAt: 0,
+      lastQuizActionUpdateAt: 0,
       lastDatasetSyncAt: 0,
       camera: { x: 0, y: 0, width: 900, height: 620 },
       debugHitboxes: false,
@@ -3335,9 +3490,9 @@ function renderPlayerViewport(player, index) {
         <div class="player-mini-gauge-fill" data-player-gauge-fill="${index}" style="width: ${percent}%"></div>
       </div>
       <div class="touch-controls" aria-label="${escapeHtml(player.name)} 터치 조작">
-        <button class="touch-button" type="button" data-touch="left" data-touch-player="${index}" aria-label="${escapeHtml(player.name)} 왼쪽">&lt;</button>
-        <button class="touch-button" type="button" data-touch="right" data-touch-player="${index}" aria-label="${escapeHtml(player.name)} 오른쪽">&gt;</button>
-        <button class="touch-button touch-jump" type="button" data-touch="jump" data-touch-player="${index}" aria-label="${escapeHtml(player.name)} 점프">점프</button>
+        <button class="touch-button" type="button" tabindex="-1" data-touch="left" data-touch-player="${index}" aria-label="${escapeHtml(player.name)} 왼쪽">&lt;</button>
+        <button class="touch-button" type="button" tabindex="-1" data-touch="right" data-touch-player="${index}" aria-label="${escapeHtml(player.name)} 오른쪽">&gt;</button>
+        <button class="touch-button touch-jump" type="button" tabindex="-1" data-touch="jump" data-touch-player="${index}" aria-label="${escapeHtml(player.name)} 점프">점프</button>
       </div>
       <button class="quiz-gauge-button quiz-map-button" type="button" data-quiz-player="${index}" ${isPlayerQuizLocked(index) ? 'disabled' : ''}>퀴즈 풀기</button>
       <div class="quiz-layer" data-quiz-layer="${index}" hidden></div>
@@ -3356,9 +3511,9 @@ function renderStageShell() {
   `;
 
   session.runtime.canvases = $$('[data-player-canvas]', elements.gameStage);
-  session.runtime.contexts = session.runtime.canvases.map((canvas) => canvas.getContext('2d'));
+  session.runtime.contexts = session.runtime.canvases.map((canvas) => getCanvasContext2d(canvas, MAP_CANVAS_CONTEXT_OPTIONS));
   session.runtime.canvas = session.runtime.canvases[session.activePlayerIndex] || session.runtime.canvases[0] || null;
-  session.runtime.ctx = session.runtime.canvas?.getContext('2d') || null;
+  session.runtime.ctx = session.runtime.contexts[session.activePlayerIndex] || session.runtime.contexts[0] || null;
   session.runtime.canvasSizeDirty = true;
   collectStageUiRefs();
   bindGaugeButton();
@@ -3587,16 +3742,73 @@ function ensureCanvasSize(canvas = session?.runtime.canvas) {
   const cache = session?.runtime?.canvasSizeCache?.get(canvas);
   if (cache && !session?.runtime?.canvasSizeDirty) return cache;
   const rect = canvas.getBoundingClientRect();
-  const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+  const renderScale = clamp(Number(session?.runtime?.renderScale) || RENDER_SCALE_MAX, RENDER_SCALE_MIN, RENDER_SCALE_MAX);
+  const dpr = clamp((window.devicePixelRatio || 1) * renderScale, 1, 2);
   const width = Math.max(1, Math.round(rect.width * dpr));
   const height = Math.max(1, Math.round(rect.height * dpr));
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
   }
-  const size = { width, height, cssWidth: Math.max(1, rect.width), cssHeight: Math.max(1, rect.height), dpr };
+  const size = { width, height, cssWidth: Math.max(1, rect.width), cssHeight: Math.max(1, rect.height), dpr, renderScale };
   session?.runtime?.canvasSizeCache?.set(canvas, size);
   return size;
+}
+
+function resetRenderCaches(runtime = session?.runtime) {
+  if (!runtime) return;
+  runtime.canvasSizeDirty = true;
+  runtime.canvasSizeCache = new WeakMap();
+  runtime.backgroundCache?.clear?.();
+}
+
+function setRuntimeRenderScale(nextScale) {
+  const runtime = session?.runtime;
+  if (!runtime) return false;
+  const next = clamp(Number(nextScale) || RENDER_SCALE_MAX, RENDER_SCALE_MIN, RENDER_SCALE_MAX);
+  const current = clamp(Number(runtime.renderScale) || RENDER_SCALE_MAX, RENDER_SCALE_MIN, RENDER_SCALE_MAX);
+  if (Math.abs(next - current) < 0.001) return false;
+  runtime.renderScale = next;
+  resetRenderCaches(runtime);
+  syncTestDataset({ force: true });
+  return true;
+}
+
+function recordRenderPerformance(drawMs, timestamp = performance.now()) {
+  const runtime = session?.runtime;
+  if (!runtime?.renderPerf) return;
+  const perf = runtime.renderPerf;
+  const now = Number.isFinite(Number(timestamp)) ? Number(timestamp) : performance.now();
+  const sampleStartedAt = Number(perf.sampleStartedAt) || now;
+  if (!perf.sampleStartedAt) perf.sampleStartedAt = sampleStartedAt;
+  perf.sampleCount = (Number(perf.sampleCount) || 0) + 1;
+  perf.sampleTotalMs = (Number(perf.sampleTotalMs) || 0) + Math.max(0, Number(drawMs) || 0);
+  perf.sampleMaxMs = Math.max(Number(perf.sampleMaxMs) || 0, Number(drawMs) || 0);
+  if (now - sampleStartedAt < RENDER_PERF_SAMPLE_MS) return;
+
+  const avgMs = perf.sampleTotalMs / Math.max(1, perf.sampleCount);
+  const maxMs = Number(perf.sampleMaxMs) || 0;
+  const currentScale = clamp(Number(runtime.renderScale) || RENDER_SCALE_MAX, RENDER_SCALE_MIN, RENDER_SCALE_MAX);
+  const slow = avgMs >= RENDER_SLOW_FRAME_MS || maxMs >= RENDER_VERY_SLOW_FRAME_MS;
+  const stable = avgMs <= RENDER_STABLE_FRAME_MS && maxMs <= RENDER_SLOW_FRAME_MS;
+
+  if (slow && currentScale > RENDER_SCALE_MIN + 0.001) {
+    setRuntimeRenderScale(currentScale - RENDER_SCALE_DROP_STEP);
+    perf.stableStartedAt = 0;
+  } else if (stable && currentScale < RENDER_SCALE_MAX - 0.001) {
+    if (!perf.stableStartedAt) perf.stableStartedAt = now;
+    if (now - perf.stableStartedAt >= RENDER_PERF_RECOVER_MS) {
+      setRuntimeRenderScale(currentScale + RENDER_SCALE_RECOVER_STEP);
+      perf.stableStartedAt = now;
+    }
+  } else if (!stable) {
+    perf.stableStartedAt = 0;
+  }
+
+  perf.sampleStartedAt = now;
+  perf.sampleCount = 0;
+  perf.sampleTotalMs = 0;
+  perf.sampleMaxMs = 0;
 }
 
 function computeCamera(canvasSize, player = getActivePlayer()) {
@@ -3628,21 +3840,310 @@ function buildProjector(canvasSize, camera) {
   };
 }
 
+function getBackgroundCacheKey(background, size) {
+  return [
+    size.width,
+    size.height,
+    background.color,
+    background.image || '',
+    background.imageOpacity
+  ].join('|');
+}
+
+function getCachedBackgroundCanvas(background, size, image) {
+  if (!session?.runtime?.backgroundCache) return null;
+  const key = getBackgroundCacheKey(background, size);
+  const cached = session.runtime.backgroundCache.get(key);
+  if (cached) return cached;
+  const canvas = document.createElement('canvas');
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const bgCtx = getCanvasContext2d(canvas, BACKGROUND_CANVAS_CONTEXT_OPTIONS);
+  if (!bgCtx) return null;
+  bgCtx.fillStyle = background.color;
+  bgCtx.fillRect(0, 0, size.width, size.height);
+  if (image) {
+    const scale = Math.max(size.width / image.naturalWidth, size.height / image.naturalHeight);
+    const drawW = image.naturalWidth * scale;
+    const drawH = image.naturalHeight * scale;
+    const x = (size.width - drawW) * 0.5;
+    const y = size.height - drawH;
+    bgCtx.save();
+    bgCtx.globalAlpha = background.imageOpacity;
+    bgCtx.drawImage(image, x, y, drawW, drawH);
+    bgCtx.restore();
+  }
+  session.runtime.backgroundCache.set(key, canvas);
+  if (session.runtime.backgroundCache.size > 8) {
+    const firstKey = session.runtime.backgroundCache.keys().next().value;
+    session.runtime.backgroundCache.delete(firstKey);
+  }
+  return canvas;
+}
+
 function drawBackground(ctx, size) {
   const { background } = session.runtime;
+  const image = getLoadedImage(background.image);
+  if (background.image && !image) {
+    ctx.fillStyle = background.color;
+    ctx.fillRect(0, 0, size.width, size.height);
+    return;
+  }
+  const cached = getCachedBackgroundCanvas(background, size, image);
+  if (cached) {
+    ctx.drawImage(cached, 0, 0);
+    return;
+  }
   ctx.fillStyle = background.color;
   ctx.fillRect(0, 0, size.width, size.height);
-  const image = getLoadedImage(background.image);
-  if (!image) return;
-  const scale = Math.max(size.width / image.naturalWidth, size.height / image.naturalHeight);
-  const drawW = image.naturalWidth * scale;
-  const drawH = image.naturalHeight * scale;
-  const x = (size.width - drawW) * 0.5;
-  const y = size.height - drawH;
+}
+
+function drawMapObjectToContext(ctx, object, image, info, x, y, scale = 1) {
+  const pw = info.drawW * scale;
+  const ph = info.drawH * scale;
+  const rotation = ((Number(object.rotation) || 0) * Math.PI) / 180;
   ctx.save();
-  ctx.globalAlpha = background.imageOpacity;
-  ctx.drawImage(image, x, y, drawW, drawH);
+  ctx.translate(x + pw / 2, y + ph / 2);
+  ctx.rotate(rotation);
+  ctx.scale(object.flipH ? -1 : 1, object.flipV ? -1 : 1);
+  if (image) {
+    ctx.drawImage(
+      image,
+      info.sourceX,
+      info.sourceY,
+      info.sourceW,
+      info.sourceH,
+      -pw / 2,
+      -ph / 2,
+      pw,
+      ph
+    );
+  } else {
+    ctx.fillStyle = 'rgba(82, 117, 72, 0.45)';
+    ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+  }
   ctx.restore();
+}
+
+function drawMapObjectDirect(ctx, object, projector) {
+  const image = getLoadedImage(object.spriteSrc);
+  const info = object.drawInfo || (object.drawInfo = getObjectDrawInfo(object, image));
+  const worldX = Number(object.x) || 0;
+  const worldY = Number(object.y) || 0;
+  drawMapObjectToContext(
+    ctx,
+    object,
+    image,
+    info,
+    projector.x(worldX),
+    projector.y(worldY),
+    projector.scale
+  );
+}
+
+function touchMapObjectChunkCache(runtime, key, chunk) {
+  runtime.objectChunkCache.delete(key);
+  runtime.objectChunkCache.set(key, chunk);
+  while (runtime.objectChunkCache.size > MAP_OBJECT_CHUNK_CACHE_LIMIT) {
+    const firstKey = runtime.objectChunkCache.keys().next().value;
+    runtime.objectChunkCache.delete(firstKey);
+  }
+}
+
+function hasCachedMapObjectChunk(runtime, key) {
+  return !!runtime?.objectChunkCache?.has(key);
+}
+
+function enqueueMapObjectChunk(runtime, key, { priority = false } = {}) {
+  if (!runtime?.objectChunkIndex?.has(key) || hasCachedMapObjectChunk(runtime, key)) return false;
+  if (!runtime.objectChunkPrepareQueue || !runtime.objectChunkPrepareQueued) return false;
+  if (runtime.objectChunkPrepareQueued.has(key)) return false;
+  if (runtime.objectChunkPrepareQueue.length >= MAP_OBJECT_CHUNK_QUEUE_LIMIT) {
+    const removed = priority
+      ? runtime.objectChunkPrepareQueue.pop()
+      : runtime.objectChunkPrepareQueue.shift();
+    if (removed) runtime.objectChunkPrepareQueued.delete(removed);
+  }
+  if (priority) runtime.objectChunkPrepareQueue.unshift(key);
+  else runtime.objectChunkPrepareQueue.push(key);
+  runtime.objectChunkPrepareQueued.add(key);
+  scheduleMapObjectChunkPrepare(runtime);
+  return true;
+}
+
+function getMapObjectChunkKeysForCull(runtime, cull) {
+  if (!runtime?.objectChunkIndex?.size) return [];
+  const keys = [];
+  const startCol = Math.floor((Number(cull.x) || 0) / MAP_OBJECT_CHUNK_SIZE);
+  const endCol = Math.floor(((Number(cull.x) || 0) + Math.max(1, Number(cull.width) || 1)) / MAP_OBJECT_CHUNK_SIZE);
+  const startRow = Math.floor((Number(cull.y) || 0) / MAP_OBJECT_CHUNK_SIZE);
+  const endRow = Math.floor(((Number(cull.y) || 0) + Math.max(1, Number(cull.height) || 1)) / MAP_OBJECT_CHUNK_SIZE);
+  for (let row = startRow; row <= endRow; row += 1) {
+    for (let col = startCol; col <= endCol; col += 1) {
+      const key = `${col},${row}`;
+      if (runtime.objectChunkIndex.has(key)) keys.push(key);
+    }
+  }
+  return keys;
+}
+
+function enqueueMapObjectChunksForCull(runtime, cull, options = {}) {
+  getMapObjectChunkKeysForCull(runtime, cull).forEach((key) => enqueueMapObjectChunk(runtime, key, options));
+}
+
+function scheduleMapObjectChunkPrepare(runtime = session?.runtime) {
+  if (!runtime || runtime.objectChunkPrepareHandle) return;
+  const run = (deadline = null) => {
+    runtime.objectChunkPrepareHandle = 0;
+    if (runtime !== session?.runtime || session?.endedAt) return;
+    const startedAt = performance.now();
+    while (runtime.objectChunkPrepareQueue?.length) {
+      const timeRemaining = typeof deadline?.timeRemaining === 'function'
+        ? deadline.timeRemaining()
+        : MAP_OBJECT_CHUNK_PREPARE_BUDGET_MS - (performance.now() - startedAt);
+      if (timeRemaining < 2 && performance.now() - startedAt >= MAP_OBJECT_CHUNK_PREPARE_BUDGET_MS) break;
+      const key = runtime.objectChunkPrepareQueue.shift();
+      runtime.objectChunkPrepareQueued.delete(key);
+      if (!key || hasCachedMapObjectChunk(runtime, key)) continue;
+      const [col, row] = key.split(',').map((value) => Number(value) || 0);
+      renderMapObjectChunk(runtime, col, row);
+    }
+    if (runtime.objectChunkPrepareQueue?.length) scheduleMapObjectChunkPrepare(runtime);
+  };
+  if (typeof window.requestIdleCallback === 'function') {
+    runtime.objectChunkPrepareHandle = window.requestIdleCallback(run, { timeout: 220 });
+    return;
+  }
+  runtime.objectChunkPrepareHandle = window.setTimeout(() => run(null), 32);
+}
+
+function cancelMapObjectChunkPrepare(runtime = session?.runtime) {
+  if (!runtime?.objectChunkPrepareHandle) return;
+  if (typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(runtime.objectChunkPrepareHandle);
+  } else {
+    window.clearTimeout(runtime.objectChunkPrepareHandle);
+  }
+  runtime.objectChunkPrepareHandle = 0;
+}
+
+function renderMapObjectChunk(runtime, col, row) {
+  if (!runtime?.objectChunkCache || !runtime?.objectChunkIndex) return null;
+  const key = `${col},${row}`;
+  const cached = runtime.objectChunkCache.get(key);
+  if (cached) {
+    touchMapObjectChunkCache(runtime, key, cached);
+    return cached;
+  }
+  const objectIndexes = runtime.objectChunkIndex.get(key);
+  if (!objectIndexes?.length) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = MAP_OBJECT_CHUNK_SIZE;
+  canvas.height = MAP_OBJECT_CHUNK_SIZE;
+  const chunkCtx = getCanvasContext2d(canvas, CHUNK_CANVAS_CONTEXT_OPTIONS);
+  if (!chunkCtx) return null;
+  const worldX = col * MAP_OBJECT_CHUNK_SIZE;
+  const worldY = row * MAP_OBJECT_CHUNK_SIZE;
+  let complete = true;
+  objectIndexes.forEach((objectIndex) => {
+    const object = runtime.objects[objectIndex];
+    if (!object) return;
+    const image = getLoadedImage(object.spriteSrc);
+    if (object.spriteSrc && !image) complete = false;
+    const info = object.drawInfo || (object.drawInfo = getObjectDrawInfo(object, image));
+    drawMapObjectToContext(
+      chunkCtx,
+      object,
+      image,
+      info,
+      (Number(object.x) || 0) - worldX,
+      (Number(object.y) || 0) - worldY,
+      1
+    );
+  });
+  const chunk = { canvas, worldX, worldY };
+  if (complete) touchMapObjectChunkCache(runtime, key, chunk);
+  return chunk;
+}
+
+function drawMapObjectChunks(ctx, runtime, cull, projector) {
+  if (!runtime?.objectChunkIndex?.size) return false;
+  const keys = getMapObjectChunkKeysForCull(runtime, cull);
+  if (!keys.length) return false;
+  const missing = keys.filter((key) => !hasCachedMapObjectChunk(runtime, key));
+  if (missing.length) {
+    missing.forEach((key) => enqueueMapObjectChunk(runtime, key, { priority: true }));
+    return false;
+  }
+  let drew = false;
+  keys.forEach((key) => {
+    const chunk = runtime.objectChunkCache.get(key);
+    if (!chunk) return;
+    touchMapObjectChunkCache(runtime, key, chunk);
+    ctx.drawImage(
+      chunk.canvas,
+      projector.x(chunk.worldX),
+      projector.y(chunk.worldY),
+      MAP_OBJECT_CHUNK_SIZE * projector.scale,
+      MAP_OBJECT_CHUNK_SIZE * projector.scale
+    );
+    drew = true;
+  });
+  return drew;
+}
+
+async function prewarmMapObjectChunks(runtime, players, options = {}) {
+  if (!runtime?.objectChunkIndex?.size || !Array.isArray(players)) return;
+  const chunkKeys = new Set();
+  players.forEach((player) => {
+    const state = player?.state;
+    if (!state) return;
+    const cull = {
+      x: (Number(state.x) || 0) - 900,
+      y: (Number(state.y) || 0) - 1500,
+      width: 1800,
+      height: 2300
+    };
+    const startCol = Math.floor(cull.x / MAP_OBJECT_CHUNK_SIZE);
+    const endCol = Math.floor((cull.x + cull.width) / MAP_OBJECT_CHUNK_SIZE);
+    const startRow = Math.floor(cull.y / MAP_OBJECT_CHUNK_SIZE);
+    const endRow = Math.floor((cull.y + cull.height) / MAP_OBJECT_CHUNK_SIZE);
+    for (let row = startRow; row <= endRow; row += 1) {
+      for (let col = startCol; col <= endCol; col += 1) {
+        const key = `${col},${row}`;
+        if (runtime.objectChunkIndex.has(key)) chunkKeys.add(key);
+      }
+    }
+  });
+  let warmed = 0;
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+  for (const key of chunkKeys) {
+    const [col, row] = key.split(',').map((value) => Number(value) || 0);
+    renderMapObjectChunk(runtime, col, row);
+    warmed += 1;
+    if (onProgress) onProgress(warmed, chunkKeys.size);
+    if (warmed % PRELOAD_IMAGE_YIELD_EVERY === 0) {
+      await yieldToBrowser();
+    }
+  }
+}
+
+function enqueueAheadMapObjectChunks(runtime = session?.runtime) {
+  if (!runtime?.objectChunkIndex?.size || !session?.players?.length) return;
+  session.players.forEach((player) => {
+    const state = player?.state;
+    if (!state) return;
+    const x = Number(state.x) || 0;
+    const y = Number(state.y) || 0;
+    const vy = Number(state.vy) || 0;
+    const verticalLead = vy < -40 ? 500 : 0;
+    enqueueMapObjectChunksForCull(runtime, {
+      x: x - MAP_OBJECT_CHUNK_AHEAD_WIDTH * 0.5,
+      y: y - MAP_OBJECT_CHUNK_AHEAD_HEIGHT - verticalLead,
+      width: MAP_OBJECT_CHUNK_AHEAD_WIDTH,
+      height: MAP_OBJECT_CHUNK_AHEAD_HEIGHT
+    });
+  });
 }
 
 function drawMapObjects(ctx, camera, projector) {
@@ -3653,39 +4154,14 @@ function drawMapObjects(ctx, camera, projector) {
     width: camera.width + 280,
     height: camera.height + 360
   };
-  for (const object of runtime.objects) {
+  if (projector.scale <= MAP_OBJECT_CHUNK_MAX_PROJECTOR_SCALE && drawMapObjectChunks(ctx, runtime, cull, projector)) {
+    return;
+  }
+  for (const object of getVisibleMapObjects(runtime, cull)) {
     const image = getLoadedImage(object.spriteSrc);
     const info = object.drawInfo || (object.drawInfo = getObjectDrawInfo(object, image));
     if (!rectsIntersect(info.worldRect, cull)) continue;
-    const worldX = Number(object.x) || 0;
-    const worldY = Number(object.y) || 0;
-    const px = projector.x(worldX);
-    const py = projector.y(worldY);
-    const pw = info.drawW * projector.scale;
-    const ph = info.drawH * projector.scale;
-    const rotation = ((Number(object.rotation) || 0) * Math.PI) / 180;
-
-    ctx.save();
-    ctx.translate(px + pw / 2, py + ph / 2);
-    ctx.rotate(rotation);
-    ctx.scale(object.flipH ? -1 : 1, object.flipV ? -1 : 1);
-    if (image) {
-      ctx.drawImage(
-        image,
-        info.sourceX,
-        info.sourceY,
-        info.sourceW,
-        info.sourceH,
-        -pw / 2,
-        -ph / 2,
-        pw,
-        ph
-      );
-    } else {
-      ctx.fillStyle = 'rgba(82, 117, 72, 0.45)';
-      ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
-    }
-    ctx.restore();
+    drawMapObjectDirect(ctx, object, projector);
   }
 }
 
@@ -3717,11 +4193,19 @@ function drawDebugHitboxes(ctx, camera, projector) {
   ctx.restore();
 }
 
+function getRuntimeEffectBudgetScale() {
+  const renderScale = Number(session?.runtime?.renderScale) || RENDER_SCALE_MAX;
+  if (renderScale <= 0.8) return 0.55;
+  if (renderScale <= 0.9) return 0.75;
+  return 1;
+}
+
 function spawnLandingDust(player, impactVy = 0) {
   if (!session || !player?.state) return;
   const metrics = session.runtime.metrics || { width: 44, height: 64 };
   const impact = clamp(Math.abs(Number(impactVy) || 0) / 520, 0.45, 1.35);
-  const count = clamp(Math.round(5 + impact * 5), 6, 12);
+  const effectBudget = getRuntimeEffectBudgetScale();
+  const count = clamp(Math.round((5 + impact * 5) * effectBudget), 3, 12);
   const footX = (Number(player.state.x) || 0) + (Number(metrics.width) || 0) / 2;
   const footY = (Number(player.state.y) || 0) + (Number(metrics.height) || 0) - 3;
   const particles = Array.isArray(player.dustParticles) ? player.dustParticles : [];
@@ -3739,7 +4223,7 @@ function spawnLandingDust(player, impactVy = 0) {
       alpha: 0.28 + Math.random() * 0.18
     });
   }
-  player.dustParticles = particles.slice(-LANDING_DUST_MAX_PARTICLES);
+  player.dustParticles = particles.slice(-Math.max(8, Math.round(LANDING_DUST_MAX_PARTICLES * effectBudget)));
 }
 
 function updatePlayerDust(player, dt) {
@@ -3764,11 +4248,14 @@ function drawLandingDust(ctx, camera, projector, viewPlayer = getActivePlayer())
     height: camera.height + 180
   };
   ctx.save();
+  const effectBudget = getRuntimeEffectBudgetScale();
   for (const player of session.players) {
     const particles = Array.isArray(player.dustParticles) ? player.dustParticles : [];
     if (!particles.length) continue;
     const active = player === viewPlayer;
-    for (const particle of particles) {
+    if (!active && effectBudget < 1) continue;
+    const visibleParticles = active ? particles : particles.slice(-6);
+    for (const particle of visibleParticles) {
       if (!rectsIntersect({ x: particle.x - 30, y: particle.y - 30, width: 60, height: 60 }, cull, 0)) continue;
       const progress = clamp((Number(particle.age) || 0) / Math.max(0.01, Number(particle.life) || 0.01), 0, 1);
       const alpha = (Number(particle.alpha) || 0.3) * (1 - progress) * (active ? 1 : 0.45);
@@ -3814,6 +4301,26 @@ function hasSpriteGroundContact(player) {
   } catch (_error) {
     return false;
   }
+}
+
+function getCachedSpriteGroundContact(player, dt) {
+  const state = player?.state;
+  if (!state) return false;
+  if (state.onGround) {
+    state._spriteGroundContact = true;
+    state._spriteGroundProbeWaitSec = 0;
+    return true;
+  }
+  const wait = Math.max(0, Number(state._spriteGroundProbeWaitSec) || 0);
+  const nextWait = wait - Math.max(0, Number(dt) || 0);
+  if (nextWait > 0) {
+    state._spriteGroundProbeWaitSec = nextWait;
+    return !!state._spriteGroundContact;
+  }
+  const contact = hasSpriteGroundContact(player);
+  state._spriteGroundContact = contact;
+  state._spriteGroundProbeWaitSec = SPRITE_GROUND_PROBE_INTERVAL_SEC;
+  return contact;
 }
 
 function updatePlayerSpriteState(player, dt, groundedForSprite = null) {
@@ -3896,18 +4403,33 @@ function getPlayerSpriteResolutionScale(crop) {
 }
 
 function getPlayerSpriteRender(runtimeMap, image) {
+  const cache = session?.runtime?.playerSpriteRenderCache;
+  const imageKey = image?.src || `${Number(image?.naturalWidth) || 0}x${Number(image?.naturalHeight) || 0}`;
+  const cropKey = runtimeMap?.playerCrop
+    ? `${runtimeMap.playerCrop.x || 0},${runtimeMap.playerCrop.y || 0},${runtimeMap.playerCrop.w || 0},${runtimeMap.playerCrop.h || 0}`
+    : 'full';
+  const key = `${imageKey}|${cropKey}|${runtimeMap?.playerScale || 1}`;
+  if (cache?.has(key)) return cache.get(key);
   const metrics = getPlayerMetrics(runtimeMap);
   const crop = getPlayerSpriteCrop(runtimeMap, image);
   const scale = metrics.scale * getPlayerSpriteResolutionScale(crop);
   const spriteW = crop.w * scale;
   const spriteH = crop.h * scale;
-  return {
+  const render = {
     crop,
     spriteW,
     spriteH,
     offsetX: metrics.width / 2 - (crop.metaW * scale) / 2 + crop.x * scale,
     offsetY: metrics.height - crop.metaH * scale + crop.y * scale
   };
+  if (cache) {
+    cache.set(key, render);
+    if (cache.size > 48) {
+      const firstKey = cache.keys().next().value;
+      cache.delete(firstKey);
+    }
+  }
+  return render;
 }
 
 function getPlayerHitboxPolygonPoints(state, metrics, runtimeMap) {
@@ -3919,6 +4441,48 @@ function getPlayerHitboxPolygonPoints(state, metrics, runtimeMap) {
     x: (Number(state.x) || 0) + (Number(point.x) || 0) * metrics.width,
     y: (Number(state.y) || 0) + (Number(point.y) || 0) * metrics.height
   }));
+}
+
+function getPlayerLabelCanvas(text, fontSize, color, active) {
+  const cache = session?.runtime?.playerLabelCache;
+  const safeText = String(text || '');
+  const safeFontSize = Math.round(Math.max(12, Number(fontSize) || 12));
+  const safeColor = String(color || '#2563eb');
+  const key = `${safeText}|${safeFontSize}|${safeColor}|${active ? 1 : 0}`;
+  if (cache?.has(key)) return cache.get(key);
+  const canvas = document.createElement('canvas');
+  const ctx = getCanvasContext2d(canvas, CHUNK_CANVAS_CONTEXT_OPTIONS);
+  if (!ctx) return null;
+  ctx.font = `900 ${safeFontSize}px sans-serif`;
+  const metrics = ctx.measureText(safeText);
+  const paddingX = active ? Math.max(6, safeFontSize * 0.32) : 4;
+  const paddingY = Math.max(3, safeFontSize * 0.22);
+  const lineWidth = active ? Math.max(2, safeFontSize * 0.16) : 0;
+  canvas.width = Math.ceil(metrics.width + paddingX * 2 + lineWidth * 2);
+  canvas.height = Math.ceil(safeFontSize + paddingY * 2 + lineWidth * 2);
+  const drawCtx = getCanvasContext2d(canvas, CHUNK_CANVAS_CONTEXT_OPTIONS);
+  if (!drawCtx) return null;
+  drawCtx.font = `900 ${safeFontSize}px sans-serif`;
+  drawCtx.textAlign = 'center';
+  drawCtx.textBaseline = 'bottom';
+  const x = canvas.width / 2;
+  const y = canvas.height - paddingY;
+  if (active) {
+    drawCtx.lineWidth = lineWidth;
+    drawCtx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+    drawCtx.strokeText(safeText, x, y);
+  }
+  drawCtx.fillStyle = safeColor;
+  drawCtx.fillText(safeText, x, y);
+  const label = { canvas, width: canvas.width, height: canvas.height };
+  if (cache) {
+    cache.set(key, label);
+    if (cache.size > 40) {
+      const firstKey = cache.keys().next().value;
+      cache.delete(firstKey);
+    }
+  }
+  return label;
 }
 
 function drawPlayers(ctx, camera, projector, viewPlayer = getActivePlayer()) {
@@ -3972,23 +4536,21 @@ function drawPlayers(ctx, camera, projector, viewPlayer = getActivePlayer()) {
     }
     ctx.restore();
 
-    ctx.save();
-    ctx.font = `900 ${Math.max(12, 12 * projector.scale + 9)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
     const text = player.name;
     const labelY = Math.max(18, y - 5);
-    if (active) {
-      ctx.lineWidth = Math.max(2, projector.scale * 2.4);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
-      ctx.strokeText(text, cx, labelY - 3);
-      ctx.globalAlpha = 1;
-    } else {
-      ctx.globalAlpha = OTHER_PLAYER_LABEL_ALPHA;
+    const labelFontSize = Math.max(12, 12 * projector.scale + 9);
+    const label = getPlayerLabelCanvas(
+      text,
+      labelFontSize,
+      active ? (player.labelColor || '#2563eb') : 'rgba(20, 32, 47, 0.72)',
+      active
+    );
+    if (label) {
+      ctx.save();
+      ctx.globalAlpha = active ? 1 : OTHER_PLAYER_LABEL_ALPHA;
+      ctx.drawImage(label.canvas, cx - label.width / 2, labelY - 3 - label.height);
+      ctx.restore();
     }
-    ctx.fillStyle = active ? (player.labelColor || '#2563eb') : 'rgba(20, 32, 47, 0.72)';
-    ctx.fillText(text, cx, labelY - 3);
-    ctx.restore();
 
     if (session.runtime.debugHitboxes) {
       ctx.save();
@@ -4018,9 +4580,49 @@ function drawPlayers(ctx, camera, projector, viewPlayer = getActivePlayer()) {
   }
 }
 
-function drawScene() {
+function getPlayerRenderSignature(player, now = performance.now()) {
+  const state = player?.state || {};
+  const dustCount = Array.isArray(player?.dustParticles) ? player.dustParticles.length : 0;
+  return [
+    Math.round((Number(state.x) || 0) * 10),
+    Math.round((Number(state.y) || 0) * 10),
+    Math.round((Number(state.vx) || 0) * 10),
+    Math.round((Number(state.vy) || 0) * 10),
+    state.facing || 1,
+    state.onGround ? 1 : 0,
+    state.jumping ? 1 : 0,
+    state._spriteSrc || '',
+    Math.floor((Number(state.walkTimer) || 0) / WALK_FRAME_INTERVAL_SEC),
+    Number(player?.damagedUntil) > now ? 1 : 0,
+    dustCount,
+    dustCount ? Math.floor(now / 33) : 0
+  ].join(':');
+}
+
+function getSceneRenderSignature(now = performance.now()) {
+  if (!session?.runtime) return '';
+  const runtime = session.runtime;
+  const canvasSignature = runtime.canvases
+    .map((canvas) => `${canvas?.width || 0}x${canvas?.height || 0}`)
+    .join(',');
+  return [
+    Number(runtime.renderScale || RENDER_SCALE_MAX).toFixed(2),
+    canvasSignature,
+    session.activePlayerIndex,
+    session.players.map((player) => getPlayerRenderSignature(player, now)).join('|')
+  ].join('||');
+}
+
+function drawScene({ force = false } = {}) {
   if (!session?.runtime.contexts?.length) return;
   const runtime = session.runtime;
+  const now = performance.now();
+  if (!force && !runtime.canvasSizeDirty) {
+    const nextSignature = getSceneRenderSignature(now);
+    if (nextSignature && nextSignature === runtime.lastSceneRenderSignature) return false;
+    runtime.lastSceneRenderSignature = nextSignature;
+  }
+  resetPlayerViewportScroll();
   session.runtime.canvases.forEach((canvas, index) => {
     const ctx = runtime.contexts[index];
     const viewPlayer = session.players[index] || getActivePlayer();
@@ -4042,10 +4644,25 @@ function drawScene() {
     drawPlayers(ctx, camera, projector, viewPlayer);
   });
   runtime.canvasSizeDirty = false;
-  updateGaugeUi();
-  renderSidePanelIfChanged();
-  updateQuizActionState();
-  syncTestDataset();
+  runtime.lastSceneRenderSignature = getSceneRenderSignature(now);
+  return true;
+}
+
+function updateRuntimeUi(timestamp = performance.now(), { force = false } = {}) {
+  if (!session?.runtime) return;
+  const runtime = session.runtime;
+  const now = Number.isFinite(Number(timestamp)) ? Number(timestamp) : performance.now();
+  if (force || now - (Number(runtime.lastUiUpdateAt) || 0) >= PLAY_UI_UPDATE_INTERVAL_MS) {
+    runtime.lastUiUpdateAt = now;
+    updateGaugeUi();
+    renderSidePanelIfChanged();
+    enqueueAheadMapObjectChunks(runtime);
+    syncTestDataset();
+  }
+  if (force || now - (Number(runtime.lastQuizActionUpdateAt) || 0) >= QUIZ_ACTION_UPDATE_INTERVAL_MS) {
+    runtime.lastQuizActionUpdateAt = now;
+    updateQuizActionState();
+  }
 }
 
 function updatePlayerProgress(player) {
@@ -4138,7 +4755,7 @@ function stepPlayerPhysics(player, dt) {
   if (isPlayerGaugeEmpty(player) && !wasOnGround && state.onGround) {
     notifyGaugeEmpty(player);
   }
-  updatePlayerSpriteState(player, dt, hasSpriteGroundContact(player));
+  updatePlayerSpriteState(player, dt, getCachedSpriteGroundContact(player, dt));
 
   const movedOnGround = (
     hadMoveInput &&
@@ -4155,11 +4772,30 @@ function stepPlayerPhysics(player, dt) {
   }
 }
 
+function canSkipIdlePlayerPhysics(player, index) {
+  const state = player?.state;
+  if (!state) return false;
+  if (index === session?.activePlayerIndex) return false;
+  if (!state.onGround || state.jumping) return false;
+  if (player?.quiz?.pending) return false;
+  if (isPlayerGaugeEmpty(player) && !player.gaugeEmptyNotified) return false;
+  if (player.control?.left || player.control?.right) return false;
+  if (state.input?.left || state.input?.right || state.input?.jumpQueued || state.input?.jumpHeld) return false;
+  if ((Number(state.input?.jumpBufferUntil) || 0) > performance.now()) return false;
+  if (Math.abs(Number(state.vx) || 0) > IDLE_PHYSICS_SPEED_EPS) return false;
+  if (Math.abs(Number(state.vy) || 0) > IDLE_PHYSICS_SPEED_EPS) return false;
+  return true;
+}
+
 function stepPhysics(dt) {
   if (!session) return;
   session.players.forEach((player, index) => {
     updatePlayerDust(player, dt);
     if (isPlayerQuizLocked(index)) return;
+    if (canSkipIdlePlayerPhysics(player, index)) {
+      updatePlayerSpriteState(player, dt, true);
+      return;
+    }
     stepPlayerPhysics(player, dt);
   });
 }
@@ -4191,7 +4827,10 @@ function gameLoop(timestamp) {
   if (stepCount >= MAX_PHYSICS_STEPS_PER_FRAME) {
     runtime.fixedAccumulator = Math.min(runtime.fixedAccumulator, PHYSICS_FIXED_STEP_SEC - 0.000001);
   }
-  drawScene();
+  const drawStartedAt = performance.now();
+  const sceneDrawn = drawScene();
+  recordRenderPerformance(sceneDrawn ? performance.now() - drawStartedAt : 0, frameTs);
+  updateRuntimeUi(frameTs);
   runtime.rafId = window.requestAnimationFrame(gameLoop);
 }
 
@@ -4199,7 +4838,8 @@ function startGameLoop() {
   if (!session) return;
   session.runtime.lastTs = null;
   session.runtime.fixedAccumulator = 0;
-  drawScene();
+  drawScene({ force: true });
+  updateRuntimeUi(performance.now(), { force: true });
   session.runtime.rafId = window.requestAnimationFrame(gameLoop);
 }
 
@@ -4236,6 +4876,7 @@ function openQuiz(playerIndex = session?.activePlayerIndex || 0) {
   nextQuestion(safeIndex);
   const quizPlayer = getPlayerByIndex(safeIndex);
   if (quizPlayer) {
+    clearTouchPointersForPlayer(safeIndex);
     if (quizPlayer.control) {
       quizPlayer.control.left = false;
       quizPlayer.control.right = false;
@@ -4375,66 +5016,143 @@ function submitAnswer(choice, playerIndex = session?.quizPlayerIndex) {
   syncSessionQuizCompatibility(safeIndex);
 }
 
-function bindHoldButton(button, onPress, onRelease) {
-  if (!button) return () => {};
-  const activePointers = new Set();
-  const down = (event) => {
-    event.preventDefault();
-    if (event.pointerId != null) activePointers.add(event.pointerId);
+function getTouchPointerKey(event) {
+  if (event?.pointerId != null) return `pointer:${event.pointerId}`;
+  return 'pointer:mouse';
+}
+
+function setTouchButtonActive(button, active) {
+  if (!button || !session?.runtime?.touchButtonCounts) return;
+  const counts = session.runtime.touchButtonCounts;
+  const current = Math.max(0, Number(counts.get(button)) || 0);
+  const next = active ? current + 1 : Math.max(0, current - 1);
+  counts.set(button, next);
+  button.classList.toggle('is-active', next > 0);
+}
+
+function applyTouchControl(playerIndex, action, active) {
+  const player = getPlayerByIndex(playerIndex);
+  if (!session || !player) return false;
+  if (active && isPlayerQuizLocked(playerIndex)) return false;
+  if (action === 'left') {
+    player.control.left = !!active;
+    return true;
+  }
+  if (action === 'right') {
+    player.control.right = !!active;
+    return true;
+  }
+  if (action === 'jump') {
+    if (active) queuePlayerJump(player);
+    else player.state.input.jumpHeld = false;
+    return true;
+  }
+  return false;
+}
+
+function releaseTouchPointer(pointerKey, event = null) {
+  if (!session?.runtime?.touchPointers || !pointerKey) return;
+  const pointer = session.runtime.touchPointers.get(pointerKey);
+  if (!pointer) return;
+  session.runtime.touchPointers.delete(pointerKey);
+  applyTouchControl(pointer.playerIndex, pointer.action, false);
+  setTouchButtonActive(pointer.button, false);
+  if (event?.pointerId != null) {
     try {
-      button.setPointerCapture?.(event.pointerId);
+      pointer.button?.releasePointerCapture?.(event.pointerId);
     } catch (_error) {
-      // Pointer capture is optional.
+      // Pointer capture release is optional.
     }
-    onPress();
-    button.classList.add('is-active');
-  };
-  const up = (event) => {
-    event.preventDefault();
-    if (event.pointerId != null) activePointers.delete(event.pointerId);
-    if (activePointers.size === 0) {
-      onRelease();
-      button.classList.remove('is-active');
-    }
-  };
-  const prevent = (event) => event.preventDefault();
-  button.addEventListener('pointerdown', down);
-  button.addEventListener('pointerup', up);
-  button.addEventListener('pointercancel', up);
-  button.addEventListener('pointerleave', up);
-  button.addEventListener('lostpointercapture', up);
-  button.addEventListener('contextmenu', prevent);
-  button.addEventListener('dragstart', prevent);
-  return () => {
-    button.removeEventListener('pointerdown', down);
-    button.removeEventListener('pointerup', up);
-    button.removeEventListener('pointercancel', up);
-    button.removeEventListener('pointerleave', up);
-    button.removeEventListener('lostpointercapture', up);
-    button.removeEventListener('contextmenu', prevent);
-    button.removeEventListener('dragstart', prevent);
-  };
+  }
+}
+
+function clearTouchPointersForPlayer(playerIndex) {
+  if (!session?.runtime?.touchPointers) return;
+  const keys = [];
+  session.runtime.touchPointers.forEach((pointer, key) => {
+    if (pointer.playerIndex === playerIndex) keys.push(key);
+  });
+  keys.forEach((key) => releaseTouchPointer(key));
+}
+
+function clearAllTouchPointers() {
+  if (!session?.runtime?.touchPointers) return;
+  [...session.runtime.touchPointers.keys()].forEach((key) => releaseTouchPointer(key));
+}
+
+function resetPlayerViewportScroll(playerIndex = null) {
+  if (!elements?.gameStage) return;
+  const selector = playerIndex == null
+    ? '[data-player-viewport]'
+    : `[data-player-viewport="${Number(playerIndex) || 0}"]`;
+  $$(selector, elements.gameStage).forEach((viewport) => {
+    if (viewport.scrollLeft) viewport.scrollLeft = 0;
+    if (viewport.scrollTop) viewport.scrollTop = 0;
+  });
+}
+
+function queuePlayerViewportScrollReset(playerIndex = null) {
+  resetPlayerViewportScroll(playerIndex);
+  window.requestAnimationFrame(() => resetPlayerViewportScroll(playerIndex));
 }
 
 function bindTouchControls() {
   const cleanup = $$('[data-touch]', elements.gameStage).map((button) => {
     const playerIndex = Number(button.dataset.touchPlayer) || 0;
     const action = button.dataset.touch || '';
-    return bindHoldButton(button, () => {
-      const player = getPlayerByIndex(playerIndex);
-      if (!session || !player) return;
-      if (isPlayerQuizLocked(playerIndex)) return;
-      if (action === 'left') player.control.left = true;
-      if (action === 'right') player.control.right = true;
-      if (action === 'jump') queuePlayerJump(player);
-    }, () => {
-      const player = getPlayerByIndex(playerIndex);
-      if (!player) return;
-      if (action === 'left') player.control.left = false;
-      if (action === 'right') player.control.right = false;
-      if (action === 'jump') player.state.input.jumpHeld = false;
-    });
+    const keepViewportFixed = () => queuePlayerViewportScrollReset(playerIndex);
+    const down = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      keepViewportFixed();
+      const pointerKey = getTouchPointerKey(event);
+      releaseTouchPointer(pointerKey, event);
+      if (!applyTouchControl(playerIndex, action, true)) return;
+      session.runtime.touchPointers.set(pointerKey, { playerIndex, action, button });
+      setTouchButtonActive(button, true);
+      try {
+        button.setPointerCapture?.(event.pointerId);
+      } catch (_error) {
+        // Pointer capture is optional.
+      }
+    };
+    const up = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      releaseTouchPointer(getTouchPointerKey(event), event);
+      keepViewportFixed();
+    };
+    const leave = (event) => {
+      if (event.pointerType === 'mouse') up(event);
+    };
+    const prevent = (event) => event.preventDefault();
+    button.addEventListener('pointerdown', down);
+    button.addEventListener('pointerup', up);
+    button.addEventListener('pointercancel', up);
+    button.addEventListener('pointerleave', leave);
+    button.addEventListener('lostpointercapture', up);
+    button.addEventListener('focus', keepViewportFixed);
+    button.addEventListener('click', keepViewportFixed);
+    button.addEventListener('contextmenu', prevent);
+    button.addEventListener('dragstart', prevent);
+    return () => {
+      button.removeEventListener('pointerdown', down);
+      button.removeEventListener('pointerup', up);
+      button.removeEventListener('pointercancel', up);
+      button.removeEventListener('pointerleave', leave);
+      button.removeEventListener('lostpointercapture', up);
+      button.removeEventListener('focus', keepViewportFixed);
+      button.removeEventListener('click', keepViewportFixed);
+      button.removeEventListener('contextmenu', prevent);
+      button.removeEventListener('dragstart', prevent);
+      button.classList.remove('is-active');
+    };
   });
+  const releaseFromWindow = (event) => releaseTouchPointer(getTouchPointerKey(event), event);
+  window.addEventListener('pointerup', releaseFromWindow);
+  window.addEventListener('pointercancel', releaseFromWindow);
+  cleanup.push(() => window.removeEventListener('pointerup', releaseFromWindow));
+  cleanup.push(() => window.removeEventListener('pointercancel', releaseFromWindow));
   session.runtime.cleanup.push(...cleanup);
 }
 
@@ -4478,6 +5196,7 @@ function bindRuntimeInput() {
   };
   const onBlur = () => {
     if (!session) return;
+    clearAllTouchPointers();
     session.input.left = false;
     session.input.right = false;
     session.keyboardPlayerIndex = -1;
@@ -4504,6 +5223,8 @@ function cleanupRuntime() {
   stopBgm();
   clearQuizAutoTimer();
   stopGameLoop();
+  cancelMapObjectChunkPrepare(session.runtime);
+  clearAllTouchPointers();
   session.runtime.cleanup.forEach((cleanup) => {
     try {
       cleanup();
@@ -4528,7 +5249,7 @@ function startTimer() {
   session.timerId = window.setInterval(updateTimer, 250);
 }
 
-async function preloadRuntimeAssets(mapBundle, charactersInput) {
+async function preloadRuntimeAssets(mapBundle, charactersInput, options = {}) {
   const objectSources = (Array.isArray(mapBundle.map.objects) ? mapBundle.map.objects : [])
     .map((object) => resolveMapAssetPath(object.sprite, 'plate'));
   const background = normalizeMapBackground(mapBundle.map);
@@ -4545,7 +5266,7 @@ async function preloadRuntimeAssets(mapBundle, charactersInput) {
     background.image,
     ...characterSources,
     ...objectSources
-  ]);
+  ], options);
 }
 
 async function startSelectedGame() {
@@ -4574,11 +5295,18 @@ async function startSelectedGame() {
       progress: 0.52,
       character: loadingCharacter
     });
-    await Promise.all([
-      preloadRuntimeAssets(mapBundle, runtimeCharacters),
-      preloadQuizImages(questions),
-      preloadImages(collectResultBadgeImageSources())
-    ]);
+    await preloadRuntimeAssets(mapBundle, runtimeCharacters, {
+      onProgress: (loaded, total) => setStartLoadingState(true, '맵과 캐릭터 이미지를 차례대로 준비하는 중입니다.', {
+        progress: 0.52 + 0.2 * (loaded / Math.max(1, total)),
+        character: loadingCharacter
+      })
+    });
+    await preloadQuizImages(questions, {
+      onProgress: (loaded, total) => setStartLoadingState(true, '퀴즈 이미지를 미리 준비하는 중입니다.', {
+        progress: 0.72 + 0.12 * (loaded / Math.max(1, total)),
+        character: loadingCharacter
+      })
+    });
     setStartLoadingState(true, '곧 시작합니다.', {
       progress: 0.94,
       character: loadingCharacter
@@ -4589,6 +5317,12 @@ async function startSelectedGame() {
       character: loadingCharacter
     });
     session = buildSession({ questions, mapBundle, characters: runtimeCharacters });
+    await prewarmMapObjectChunks(session.runtime, session.players, {
+      onProgress: (loaded, total) => setStartLoadingState(true, '시작 지점 주변 발판을 미리 그리는 중입니다.', {
+        progress: 0.94 + 0.04 * (loaded / Math.max(1, total)),
+        character: loadingCharacter
+      })
+    });
     showScreen('play');
     renderPlay();
     bindRuntimeInput();
