@@ -74,7 +74,7 @@ const RENDER_SLOW_FRAME_MS = 26;
 const RENDER_VERY_SLOW_FRAME_MS = 38;
 const RENDER_STABLE_FRAME_MS = 17.5;
 const IDLE_PHYSICS_SPEED_EPS = 0.02;
-const MIN_START_LOADING_MS = 5600;
+const MIN_START_LOADING_MS = 7600;
 const LOADING_SPRITE_FRAME_MS = 120;
 const LOADING_FACT_ROTATE_MS = 4600;
 const PRELOAD_IMAGE_DECODE_TIMEOUT_MS = 450;
@@ -416,12 +416,12 @@ const LOADING_GAME_FACTS = Object.freeze([
   Object.freeze({
     label: '게임 안내',
     text: '퀴즈로 체력을 채운 뒤 발판을 딛고 더 높은 곳에 도전해 보세요.',
-    source: '놀퀴즈 점프맵 안내'
+    source: '위인 점프맵 안내'
   }),
   Object.freeze({
     label: '게임 안내',
     text: '방향키는 톡 누르기보다 계속 누른 채 점프하세요. 단발성 입력만으로는 장애물 넘기가 어려워요.',
-    source: '놀퀴즈 점프맵 안내'
+    source: '위인 점프맵 안내'
   })
 ]);
 
@@ -437,7 +437,8 @@ const elements = {
   characterOptions: $('#character-options'),
   startButton: $('#start-button'),
   setupError: $('#setup-error'),
-  gugudanStatusDetails: $('#gugudan-status-details'),
+  gugudanStatusCheck: $('#gugudan-status-check'),
+  gugudanStatusToggle: $('#gugudan-status-toggle'),
   gugudanStatusButton: $('#gugudan-status-button'),
   gugudanStatusFile: $('#gugudan-status-file'),
   gugudanMergeRecordsButton: $('#gugudan-merge-records-button'),
@@ -467,6 +468,7 @@ const elements = {
   loadingFactSource: $('#jump-loading-fact-source'),
   loadingSprite: $('#jump-loading-sprite'),
   loadingProgressFill: $('#jump-loading-progress-fill'),
+  loadingGrid: $('#jump-loading-grid'),
   finishGameButton: $('#finish-game-button'),
   playTitle: $('#play-title'),
   timerPill: $('#timer-pill'),
@@ -487,6 +489,8 @@ const elements = {
   qrModal: $('#qr-modal'),
   qrLarge: $('#qr-large'),
   qrUrlText: $('#qr-url-text'),
+  modePromptModal: $('#mode-prompt-modal'),
+  modePromptHint: $('#mode-prompt-hint'),
   restartSameButton: $('#restart-same-button'),
   backSetupButton: $('#back-setup-button'),
   displayModeToggle: $('#display-mode-toggle')
@@ -506,13 +510,18 @@ let selectedCharacterIds = Array.from({ length: Math.max(...PLAYER_COUNTS) }, (_
   CHARACTERS[index % CHARACTERS.length]?.id || 'sejong'
 ));
 let selectedDisplayMode = 'auto';
+let modePromptResolved = false;
 let activeWeaknessPractice = null;
 let session = null;
 let viewportUpdateRaf = 0;
 let startLoadingSpriteTimer = 0;
 let startLoadingSpriteCharacterId = '';
+let startLoadingSpriteSourcesByPanel = [];
+let startLoadingSpriteFrameIndex = 0;
 let startLoadingFactTimer = 0;
 let startLoadingFactCharacterId = '';
+let startLoadingFactPoolsByPanel = [];
+let startLoadingFactIndex = 0;
 let bgmAudio = null;
 let bgmMuted = false;
 let bgmRunning = false;
@@ -618,6 +627,30 @@ function getLoadingCharacterFromSelection() {
   return getCharacter(selectedCharacter.id);
 }
 
+function normalizeLoadingCharacter(character, index = 0) {
+  if (!character || character.id === RANDOM_CHARACTER_ID) {
+    return CHARACTERS[index % CHARACTERS.length] || CHARACTERS[0];
+  }
+  return getCharacter(character.id);
+}
+
+function getLoadingCharactersFromSelection(count = selectedPlayers) {
+  const characters = getSelectedCharacters(count, { resolveRandom: false });
+  return Array.from({ length: Math.max(1, Number(count) || 1) }, (_, index) => (
+    normalizeLoadingCharacter(characters[index], index)
+  ));
+}
+
+function getLoadingPanelCharacters(options = {}) {
+  const source = Array.isArray(options.characters)
+    ? options.characters
+    : (options.character ? [options.character] : getLoadingCharactersFromSelection(selectedPlayers));
+  const count = Math.max(1, selectedPlayers);
+  return Array.from({ length: count }, (_, index) => (
+    normalizeLoadingCharacter(source[index] || source[0], index)
+  ));
+}
+
 function getLoadingCharacterId(character) {
   const characterId = character?.id === RANDOM_CHARACTER_ID ? CHARACTERS[0].id : character?.id;
   return CHARACTERS.some((item) => item.id === characterId) ? characterId : CHARACTERS[0].id;
@@ -639,11 +672,56 @@ function getLoadingSpriteSources(character) {
   return sprites.length ? sprites : [CHARACTERS[0].walk[0]];
 }
 
-function setStartLoadingFact(fact) {
-  setTextIfChanged(elements.loadingFactLabel, fact?.label || '역사 이야기');
-  setTextIfChanged(elements.loadingFactText, fact?.text || '역사 정보를 준비하고 있어요.');
+function getStartLoadingCards() {
+  const root = elements.loadingGrid || elements.loadingScreen;
+  return root ? $$('[data-loading-panel]', root) : [];
+}
+
+function createStartLoadingCard(index) {
+  const baseCard = $('.jump-loading-card', elements.loadingGrid || elements.loadingScreen);
+  if (!baseCard) return null;
+  const clone = baseCard.cloneNode(true);
+  clone.classList.add('jump-loading-card-clone');
+  clone.dataset.loadingPanel = String(index);
+  $$('[id]', clone).forEach((element) => element.removeAttribute('id'));
+  return clone;
+}
+
+function syncStartLoadingPanelCount(count = 1) {
+  const root = elements.loadingGrid;
+  if (!root) return getStartLoadingCards();
+  const safeCount = clamp(Math.round(Number(count) || 1), 1, Math.max(...PLAYER_COUNTS));
+  root.className = `jump-loading-grid player-count-${safeCount}`;
+  root.dataset.loadingCount = String(safeCount);
+  elements.loadingScreen?.setAttribute('data-loading-count', String(safeCount));
+  const baseCard = $('.jump-loading-card:not(.jump-loading-card-clone)', root) || $('.jump-loading-card', root);
+  if (baseCard) {
+    baseCard.dataset.loadingPanel = '0';
+    baseCard.classList.toggle('is-split-card', safeCount > 1);
+  }
+  $$('.jump-loading-card-clone', root).forEach((card) => {
+    const index = Number(card.dataset.loadingPanel) || 0;
+    if (index >= safeCount) card.remove();
+  });
+  for (let index = 1; index < safeCount; index += 1) {
+    let card = $(`.jump-loading-card[data-loading-panel="${index}"]`, root);
+    if (!card) {
+      card = createStartLoadingCard(index);
+      if (card) root.append(card);
+    }
+    card?.classList.add('is-split-card');
+  }
+  getStartLoadingCards().forEach((card) => {
+    card.classList.toggle('is-split-card', safeCount > 1);
+  });
+  return getStartLoadingCards();
+}
+
+function setStartLoadingFact(fact, card = elements.loadingScreen) {
+  setTextIfChanged($('.jump-loading-fact-label', card), fact?.label || '역사 이야기');
+  setTextIfChanged($('.jump-loading-fact p', card), fact?.text || '역사 정보를 준비하고 있어요.');
   const source = fact?.source ? `출처: ${fact.source}` : '출처: 놀퀴즈';
-  setTextIfChanged(elements.loadingFactSource, source);
+  setTextIfChanged($('.jump-loading-fact-source', card), source);
 }
 
 function buildStartLoadingFactPool(character) {
@@ -662,21 +740,35 @@ function stopStartLoadingSpriteAnimation() {
   window.clearInterval(startLoadingSpriteTimer);
   startLoadingSpriteTimer = 0;
   startLoadingSpriteCharacterId = '';
+  startLoadingSpriteSourcesByPanel = [];
+  startLoadingSpriteFrameIndex = 0;
 }
 
-function startStartLoadingSpriteAnimation(character) {
-  if (!(elements.loadingSprite instanceof HTMLImageElement)) return;
-  const characterId = getLoadingCharacterId(character);
-  if (startLoadingSpriteTimer && startLoadingSpriteCharacterId === characterId) return;
-  const sprites = getLoadingSpriteSources(character);
-  let frameIndex = 0;
+function updateStartLoadingSpriteFrames() {
+  const cards = getStartLoadingCards();
+  cards.forEach((card, index) => {
+    const image = $('.jump-loading-sprite', card);
+    const sprites = startLoadingSpriteSourcesByPanel[index] || startLoadingSpriteSourcesByPanel[0] || [];
+    if (!(image instanceof HTMLImageElement) || !sprites.length) return;
+    image.src = sprites[startLoadingSpriteFrameIndex % sprites.length];
+  });
+}
+
+function startStartLoadingSpriteAnimation(charactersInput) {
+  const characters = Array.isArray(charactersInput) ? charactersInput : [charactersInput || getLoadingCharacterFromSelection()];
+  const characterKey = characters.map((character, index) => getLoadingCharacterId(normalizeLoadingCharacter(character, index))).join('|');
+  if (startLoadingSpriteTimer && startLoadingSpriteCharacterId === characterKey) {
+    updateStartLoadingSpriteFrames();
+    return;
+  }
   stopStartLoadingSpriteAnimation();
-  startLoadingSpriteCharacterId = characterId;
-  preloadImages(sprites);
-  elements.loadingSprite.src = sprites[0];
+  startLoadingSpriteCharacterId = characterKey;
+  startLoadingSpriteSourcesByPanel = characters.map((character, index) => getLoadingSpriteSources(normalizeLoadingCharacter(character, index)));
+  startLoadingSpriteSourcesByPanel.forEach((sprites) => preloadImages(sprites));
+  updateStartLoadingSpriteFrames();
   startLoadingSpriteTimer = window.setInterval(() => {
-    frameIndex = (frameIndex + 1) % sprites.length;
-    elements.loadingSprite.src = sprites[frameIndex];
+    startLoadingSpriteFrameIndex += 1;
+    updateStartLoadingSpriteFrames();
   }, LOADING_SPRITE_FRAME_MS);
 }
 
@@ -685,19 +777,32 @@ function stopStartLoadingFactRotation() {
   window.clearInterval(startLoadingFactTimer);
   startLoadingFactTimer = 0;
   startLoadingFactCharacterId = '';
+  startLoadingFactPoolsByPanel = [];
+  startLoadingFactIndex = 0;
 }
 
-function startStartLoadingFactRotation(character) {
-  const characterId = getLoadingCharacterId(character);
-  if (startLoadingFactTimer && startLoadingFactCharacterId === characterId) return;
-  const facts = buildStartLoadingFactPool(character);
-  let factIndex = 0;
+function updateStartLoadingFacts() {
+  const cards = getStartLoadingCards();
+  cards.forEach((card, index) => {
+    const facts = startLoadingFactPoolsByPanel[index] || startLoadingFactPoolsByPanel[0] || LOADING_GAME_FACTS;
+    setStartLoadingFact(facts[(startLoadingFactIndex + index) % facts.length], card);
+  });
+}
+
+function startStartLoadingFactRotation(charactersInput) {
+  const characters = Array.isArray(charactersInput) ? charactersInput : [charactersInput || getLoadingCharacterFromSelection()];
+  const characterKey = characters.map((character, index) => getLoadingCharacterId(normalizeLoadingCharacter(character, index))).join('|');
+  if (startLoadingFactTimer && startLoadingFactCharacterId === characterKey) {
+    updateStartLoadingFacts();
+    return;
+  }
   stopStartLoadingFactRotation();
-  startLoadingFactCharacterId = characterId;
-  setStartLoadingFact(facts[factIndex]);
+  startLoadingFactCharacterId = characterKey;
+  startLoadingFactPoolsByPanel = characters.map((character, index) => buildStartLoadingFactPool(normalizeLoadingCharacter(character, index)));
+  updateStartLoadingFacts();
   startLoadingFactTimer = window.setInterval(() => {
-    factIndex = (factIndex + 1) % facts.length;
-    setStartLoadingFact(facts[factIndex]);
+    startLoadingFactIndex += 1;
+    updateStartLoadingFacts();
   }, LOADING_FACT_ROTATE_MS);
 }
 
@@ -709,6 +814,8 @@ function setStartLoadingState(loading, message = '', options = {}) {
   elements.startButton.textContent = active ? '준비 중...' : '도전 시작';
   elements.setupError.classList.toggle('is-loading', active);
   elements.setupError.textContent = message;
+  document.documentElement.classList.toggle('start-loading-open', active);
+  document.body.classList.toggle('start-loading-open', active);
   if (!elements.loadingScreen) return;
 
   setHiddenIfChanged(elements.loadingScreen, !active);
@@ -717,20 +824,29 @@ function setStartLoadingState(loading, message = '', options = {}) {
   if (!active) {
     stopStartLoadingSpriteAnimation();
     stopStartLoadingFactRotation();
-    setWidthIfChanged(elements.loadingProgressFill, 0);
+    getStartLoadingCards().forEach((card) => setWidthIfChanged($('.jump-loading-progress i', card), 0));
+    syncStartLoadingPanelCount(1);
     return;
   }
 
-  const character = options.character || getLoadingCharacterFromSelection();
+  const characters = getLoadingPanelCharacters(options);
   const progress = Number.isFinite(options.progress) ? clamp(options.progress, 0, 1) : 0.12;
   const modeDescription = getStartLoadingModeDescription();
-  setTextIfChanged(elements.loadingTitle, options.title || '점프맵 로딩 중');
-  setTextIfChanged(elements.loadingMessage, message || '캐릭터와 맵 데이터를 준비하고 있어요.');
-  setTextIfChanged(elements.loadingModeTitle, modeDescription.title);
-  setTextIfChanged(elements.loadingModeText, modeDescription.text);
-  setWidthIfChanged(elements.loadingProgressFill, Math.max(6, Math.round(progress * 100)));
-  startStartLoadingSpriteAnimation(character);
-  startStartLoadingFactRotation(character);
+  const cards = syncStartLoadingPanelCount(characters.length);
+  cards.forEach((card, index) => {
+    const character = characters[index] || characters[0] || CHARACTERS[0];
+    const playerLabel = characters.length > 1
+      ? `사용자${index + 1} · ${character.label}`
+      : '위인 점프맵';
+    setTextIfChanged($('.jump-loading-kicker', card), playerLabel);
+    setTextIfChanged($('.jump-loading-copy h2', card), options.title || '점프맵 로딩 중');
+    setTextIfChanged($('.jump-loading-copy p', card), message || '캐릭터와 맵 데이터를 준비하고 있어요.');
+    setTextIfChanged($('.jump-loading-mode strong', card), modeDescription.title);
+    setTextIfChanged($('.jump-loading-mode p', card), modeDescription.text);
+    setWidthIfChanged($('.jump-loading-progress i', card), Math.max(6, Math.round(progress * 100)));
+  });
+  startStartLoadingSpriteAnimation(characters);
+  startStartLoadingFactRotation(characters);
 }
 
 function updateBgmToggleButton() {
@@ -1022,6 +1138,21 @@ function syncViewportProfile() {
   return profile;
 }
 
+function applyDisplayMode(displayModeId, { updateSetup = true } = {}) {
+  if (!DISPLAY_MODES.some((mode) => mode.id === displayModeId)) return syncViewportProfile();
+  selectedDisplayMode = displayModeId;
+  markRuntimeLayoutDirty();
+  const profile = syncViewportProfile();
+  if (!session) {
+    clampSelectedPlayersToViewport(profile);
+    if (updateSetup) updateSetupSummary();
+    return profile;
+  }
+  drawScene();
+  syncTestDataset();
+  return profile;
+}
+
 function markRuntimeLayoutDirty() {
   if (session?.runtime) {
     session.runtime.canvasSizeDirty = true;
@@ -1045,24 +1176,75 @@ function scheduleViewportUpdate() {
     if (!session) {
       clampSelectedPlayersToViewport(profile);
       updateSetupSummary();
+      if (elements.modePromptModal && !elements.modePromptModal.classList.contains('is-hidden')) {
+        updateModePromptRecommendation();
+      }
       return;
     }
     drawScene();
+    if (elements.modePromptModal && !elements.modePromptModal.classList.contains('is-hidden')) {
+      updateModePromptRecommendation();
+    }
   });
 }
 
 function selectNextDisplayMode() {
+  const screen = document.body.dataset.screen || 'setup';
+  const loading = elements.loadingScreen && !elements.loadingScreen.hidden;
+  if (session || screen !== 'setup' || loading) return;
   const currentIndex = DISPLAY_MODES.findIndex((mode) => mode.id === selectedDisplayMode);
-  selectedDisplayMode = DISPLAY_MODES[(currentIndex + 1 + DISPLAY_MODES.length) % DISPLAY_MODES.length]?.id || 'auto';
-  markRuntimeLayoutDirty();
-  const profile = syncViewportProfile();
-  if (!session) {
-    clampSelectedPlayersToViewport(profile);
-    updateSetupSummary();
-    return;
+  const nextMode = DISPLAY_MODES[(currentIndex + 1 + DISPLAY_MODES.length) % DISPLAY_MODES.length]?.id || 'auto';
+  applyDisplayMode(nextMode);
+}
+
+function getRecommendedPromptMode() {
+  const profile = getAutoViewportProfile();
+  if (profile.kind === 'phone') return 'mobile';
+  if (profile.kind === 'tablet') return 'tablet';
+  return 'wide';
+}
+
+function updateModePromptRecommendation() {
+  if (!elements.modePromptModal) return;
+  const recommendedMode = getRecommendedPromptMode();
+  const recommendedLabel = getDisplayModeLabel(recommendedMode);
+  if (elements.modePromptHint) {
+    elements.modePromptHint.textContent = `우측 상단 모드 버튼으로 모바일, 태블릿, 웹/전자칠판을 다시 선택할 수 있습니다. 게임이 시작되면 화면 모드는 고정됩니다. 현재 추천: ${recommendedLabel}`;
   }
-  drawScene();
-  syncTestDataset();
+  $$('[data-mode-prompt-choice]', elements.modePromptModal).forEach((button) => {
+    const recommended = button.dataset.modePromptChoice === recommendedMode;
+    button.classList.toggle('is-recommended', recommended);
+    const baseLabel = button.querySelector('b')?.textContent?.trim() || button.textContent.trim();
+    button.setAttribute('aria-label', recommended ? `${baseLabel}, 현재 화면 추천` : baseLabel);
+  });
+}
+
+function setModePromptOpen(open) {
+  if (!elements.modePromptModal) return;
+  elements.modePromptModal.classList.toggle('is-hidden', !open);
+  elements.modePromptModal.setAttribute('aria-hidden', String(!open));
+  document.body.classList.toggle('mode-prompt-open', !!open);
+  if (open) {
+    updateModePromptRecommendation();
+    const recommendedMode = getRecommendedPromptMode();
+    const target = $(`[data-mode-prompt-choice="${recommendedMode}"]`, elements.modePromptModal)
+      || $('[data-mode-prompt-choice]', elements.modePromptModal);
+    window.requestAnimationFrame(() => target?.focus());
+  } else {
+    elements.displayModeToggle?.focus?.();
+  }
+}
+
+function chooseModeFromPrompt(displayModeId) {
+  modePromptResolved = true;
+  applyDisplayMode(displayModeId);
+  setModePromptOpen(false);
+}
+
+function showInitialModePrompt() {
+  const screen = document.body.dataset.screen || 'setup';
+  if (modePromptResolved || !elements.modePromptModal || screen !== 'setup') return;
+  setModePromptOpen(true);
 }
 
 function formatClock(totalSeconds) {
@@ -1362,8 +1544,15 @@ function getWeaknessPracticeInput(recordType = 'gugudan') {
 }
 
 function openGugudanStatusDetails() {
-  if (elements.gugudanStatusDetails && !elements.gugudanStatusDetails.open) {
-    elements.gugudanStatusDetails.open = true;
+  setGugudanStatusOpen(true);
+}
+
+function setGugudanStatusOpen(open) {
+  if (!elements.gugudanStatusCheck) return;
+  elements.gugudanStatusCheck.classList.toggle('is-collapsed', !open);
+  elements.gugudanStatusToggle?.setAttribute('aria-expanded', String(open));
+  if (elements.gugudanStatusToggle) {
+    elements.gugudanStatusToggle.textContent = open ? '접기' : '펴기';
   }
 }
 
@@ -3779,7 +3968,7 @@ function renderQuizPanel(playerIndex = null) {
 
 function renderPlay() {
   if (!session) return;
-  elements.playTitle.textContent = '놀퀴즈:점프맵';
+  elements.playTitle.textContent = '위인 점프맵';
   renderStageShell();
   updateTimer();
 }
@@ -5594,10 +5783,12 @@ async function startSelectedGame() {
   }
   startBgm();
   const weaknessPractice = getActiveWeaknessPractice(selectedPackId);
-  const loadingCharacterPreview = getLoadingCharacterFromSelection();
+  const loadingCharactersPreview = getLoadingCharactersFromSelection(selectedPlayers);
+  const loadingCharacterPreview = loadingCharactersPreview[0] || getLoadingCharacterFromSelection();
   setStartLoadingState(true, weaknessPractice ? '취약점 연습 문제와 게임 자료를 준비하는 중입니다.' : '게임 자료를 미리 불러오는 중입니다.', {
     progress: 0.14,
-    character: loadingCharacterPreview
+    character: loadingCharacterPreview,
+    characters: loadingCharactersPreview
   });
   try {
     const [questions, mapBundle] = await Promise.all([
@@ -5608,34 +5799,40 @@ async function startSelectedGame() {
     const loadingCharacter = runtimeCharacters[0] || loadingCharacterPreview;
     setStartLoadingState(true, '이미지를 미리 불러와 플레이 중 끊김을 줄이는 중입니다.', {
       progress: 0.52,
-      character: loadingCharacter
+      character: loadingCharacter,
+      characters: runtimeCharacters
     });
     await preloadRuntimeAssets(mapBundle, runtimeCharacters, {
       onProgress: (loaded, total) => setStartLoadingState(true, '맵과 캐릭터 이미지를 차례대로 준비하는 중입니다.', {
         progress: 0.52 + 0.2 * (loaded / Math.max(1, total)),
-        character: loadingCharacter
+        character: loadingCharacter,
+        characters: runtimeCharacters
       })
     });
     await preloadQuizImages(questions, {
       onProgress: (loaded, total) => setStartLoadingState(true, '퀴즈 이미지를 미리 준비하는 중입니다.', {
         progress: 0.72 + 0.12 * (loaded / Math.max(1, total)),
-        character: loadingCharacter
+        character: loadingCharacter,
+        characters: runtimeCharacters
       })
     });
     setStartLoadingState(true, '곧 시작합니다.', {
       progress: 0.94,
-      character: loadingCharacter
+      character: loadingCharacter,
+      characters: runtimeCharacters
     });
     await keepMinimumLoadingTime(loadingStartedAt);
     setStartLoadingState(true, '출발합니다.', {
       progress: 1,
-      character: loadingCharacter
+      character: loadingCharacter,
+      characters: runtimeCharacters
     });
     session = buildSession({ questions, mapBundle, characters: runtimeCharacters });
     await prewarmMapObjectChunks(session.runtime, session.players, {
       onProgress: (loaded, total) => setStartLoadingState(true, '시작 지점 주변 발판을 미리 그리는 중입니다.', {
         progress: 0.94 + 0.04 * (loaded / Math.max(1, total)),
-        character: loadingCharacter
+        character: loadingCharacter,
+        characters: runtimeCharacters
       })
     });
     showScreen('play');
@@ -5728,7 +5925,7 @@ function renderResult() {
     <div class="jumpmap-face-result-center" aria-label="마주보기 점프 결과 요약">
       <div>
         <span>점프 종료</span>
-        <b>놀퀴즈:점프맵</b>
+        <b>위인 점프맵</b>
       </div>
       <dl>
         <div><dt>최고 높이</dt><dd>${escapeHtml(formatHeightMeters(summary.bestHeight))}</dd></div>
@@ -5869,6 +6066,11 @@ function goBack() {
 
 function bindEvents() {
   elements.displayModeToggle?.addEventListener('click', selectNextDisplayMode);
+  elements.modePromptModal?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-mode-prompt-choice]');
+    if (!button) return;
+    chooseModeFromPrompt(button.dataset.modePromptChoice || 'mobile');
+  });
 
   elements.quizPack.addEventListener('change', () => {
     selectedPackId = elements.quizPack.value;
@@ -5909,6 +6111,10 @@ function bindEvents() {
   elements.startButton.addEventListener('click', startSelectedGame);
   elements.bgmToggleButton?.addEventListener('click', toggleBgm);
   elements.backSetupButton.addEventListener('click', abandonSession);
+  elements.gugudanStatusToggle?.addEventListener('click', () => {
+    const expanded = elements.gugudanStatusToggle.getAttribute('aria-expanded') === 'true';
+    setGugudanStatusOpen(!expanded);
+  });
   elements.gugudanStatusButton?.addEventListener('click', () => {
     if (!elements.gugudanStatusFile) return;
     elements.gugudanStatusFile.value = '';
@@ -6035,3 +6241,4 @@ function bindEvents() {
 renderSetupControls();
 bindEvents();
 updateBgmToggleButton();
+showInitialModePrompt();

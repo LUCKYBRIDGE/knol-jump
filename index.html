@@ -3,56 +3,83 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>놀퀴즈:점프맵</title>
-    <link rel="stylesheet" href="./styles.css?v=20260602-hold-jump-tip" />
+    <title>위인 점프맵</title>
+    <link rel="stylesheet" href="./styles.css?v=20260602-hero-jumpmap-name" />
   </head>
   <body class="theme-jumpmap">
-    <button class="display-mode-toggle" type="button" id="display-mode-toggle" aria-label="화면 모드 전환">모드:자동</button>
+    <section class="mode-prompt-modal is-hidden" id="mode-prompt-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="mode-prompt-title">
+      <div class="mode-prompt-backdrop" aria-hidden="true"></div>
+      <div class="mode-prompt-card">
+        <div class="mode-prompt-head">
+          <span class="screen-kicker">Screen Mode</span>
+          <h2 id="mode-prompt-title">사용 기기를 선택하세요</h2>
+          <p>선택한 기기에 맞춰 화면 크기, 인원 표시, 태블릿 마주보기 구성이 정리됩니다.</p>
+        </div>
+        <div class="mode-prompt-options" role="group" aria-label="사용 기기 선택">
+          <button class="mode-prompt-choice" type="button" data-mode-prompt-choice="mobile">
+            <b>모바일</b>
+            <span>작은 화면 · 1인 중심</span>
+          </button>
+          <button class="mode-prompt-choice" type="button" data-mode-prompt-choice="tablet">
+            <b>태블릿</b>
+            <span>2인 마주보기까지</span>
+          </button>
+          <button class="mode-prompt-choice" type="button" data-mode-prompt-choice="wide">
+            <b>웹/전자칠판</b>
+            <span>넓은 화면 · 4인까지</span>
+          </button>
+        </div>
+        <div class="mode-prompt-note" role="note">
+          <strong>시작 전에는 언제든 변경 가능</strong>
+          <span id="mode-prompt-hint">우측 상단 <b>모드</b> 버튼으로 모바일, 태블릿, 웹/전자칠판을 다시 선택할 수 있습니다. 게임이 시작되면 화면 모드는 고정됩니다.</span>
+        </div>
+      </div>
+    </section>
     <section class="jump-loading-screen" id="jump-loading-screen" aria-live="polite" aria-label="점프맵 로딩" hidden>
-      <div class="jump-loading-card">
-        <div class="jump-loading-copy">
-          <span class="jump-loading-kicker">놀퀴즈:점프맵</span>
-          <h2 id="jump-loading-title">점프맵 로딩 중</h2>
-          <p id="jump-loading-message">캐릭터와 맵 데이터를 준비하고 있어요.</p>
-        </div>
-        <div class="jump-loading-mode" aria-live="polite">
-          <strong id="jump-loading-mode-title">현재 모드</strong>
-          <p id="jump-loading-mode-text">점프맵 규칙을 정리하는 중입니다.</p>
-        </div>
-        <ul class="jump-loading-tips">
-          <li>방향키를 누른 채 점프해야 장애물을 넘기기 쉬워요.</li>
-          <li>점프 중에도 방향키로 착지 위치를 조절할 수 있어요.</li>
-          <li>퀴즈 풀기에서 이동에 필요한 체력을 채울 수 있어요.</li>
-          <li>더블 점프가 가능합니다.</li>
-        </ul>
-        <section class="jump-loading-fact" id="jump-loading-fact" aria-live="polite">
-          <div class="jump-loading-fact-label" id="jump-loading-fact-label">역사 이야기</div>
-          <p id="jump-loading-fact-text">역사 정보를 준비하고 있어요.</p>
-          <div class="jump-loading-fact-source" id="jump-loading-fact-source">출처: 놀퀴즈</div>
-        </section>
-        <div class="jump-loading-stage" aria-hidden="true">
-          <div class="jump-loading-sky"></div>
-          <div class="jump-loading-path"></div>
-          <img class="jump-loading-sprite" id="jump-loading-sprite" src="./assets/characters/sejong/sejong_walk1.png" alt="" />
-        </div>
-        <div class="jump-loading-progress" aria-hidden="true">
-          <i id="jump-loading-progress-fill"></i>
+      <div class="jump-loading-grid player-count-1" id="jump-loading-grid" data-loading-count="1">
+        <div class="jump-loading-card" data-loading-panel="0">
+          <div class="jump-loading-copy">
+            <span class="jump-loading-kicker">위인 점프맵</span>
+            <h2 id="jump-loading-title">점프맵 로딩 중</h2>
+            <p id="jump-loading-message">캐릭터와 맵 데이터를 준비하고 있어요.</p>
+          </div>
+          <div class="jump-loading-mode" aria-live="polite">
+            <strong id="jump-loading-mode-title">현재 모드</strong>
+            <p id="jump-loading-mode-text">점프맵 규칙을 정리하는 중입니다.</p>
+          </div>
+          <ul class="jump-loading-tips">
+            <li>방향키를 누른 채 점프해야 장애물을 넘기기 쉬워요.</li>
+            <li>점프 중에도 방향키로 착지 위치를 조절할 수 있어요.</li>
+            <li>퀴즈 풀기에서 이동에 필요한 체력을 채울 수 있어요.</li>
+            <li>더블 점프가 가능합니다.</li>
+          </ul>
+          <section class="jump-loading-fact" id="jump-loading-fact" aria-live="polite">
+            <div class="jump-loading-fact-label" id="jump-loading-fact-label">역사 이야기</div>
+            <p id="jump-loading-fact-text">역사 정보를 준비하고 있어요.</p>
+            <div class="jump-loading-fact-source" id="jump-loading-fact-source">출처: 놀퀴즈</div>
+          </section>
+          <div class="jump-loading-stage" aria-hidden="true">
+            <div class="jump-loading-sky"></div>
+            <div class="jump-loading-path"></div>
+            <img class="jump-loading-sprite" id="jump-loading-sprite" src="./assets/characters/sejong/sejong_walk1.png" alt="" />
+          </div>
+          <div class="jump-loading-progress" aria-hidden="true">
+            <i id="jump-loading-progress-fill"></i>
+          </div>
         </div>
       </div>
     </section>
     <div class="app-shell">
+      <div class="top-controls" aria-label="상단 빠른 메뉴">
+        <button class="display-mode-toggle" type="button" id="display-mode-toggle" aria-label="화면 모드 전환">모드:자동</button>
+        <button class="ghost-action compact-action qr-open-action" type="button" data-action="open-qr" aria-label="접속 QR 크게 보기">QR</button>
+        <button class="ghost-action compact-action" type="button" data-action="enter-fullscreen">전체화면</button>
+        <button class="ghost-action compact-action" type="button" data-action="exit-fullscreen" hidden>전체화면 해제</button>
+      </div>
       <header class="topbar">
         <div class="brand-block">
-          <span class="brand-kicker">놀퀴즈 게임</span>
-          <h1>놀퀴즈:점프맵</h1>
-        </div>
-        <div class="topbar-right">
-          <div class="session-badge">발판을 딛고 정상까지</div>
-          <div class="topbar-actions" aria-label="화면 조작">
-            <button class="ghost-action compact-action qr-open-action" type="button" data-action="open-qr">QR</button>
-            <button class="ghost-action compact-action" type="button" data-action="enter-fullscreen">전체화면</button>
-            <button class="ghost-action compact-action" type="button" data-action="exit-fullscreen" hidden>전체화면 해제</button>
-          </div>
+          <span class="brand-kicker">역사 점프 게임</span>
+          <h1>위인 점프맵</h1>
         </div>
       </header>
 
@@ -112,25 +139,22 @@
                 <div class="character-grid" id="character-options" aria-label="사용자별 캐릭터 선택"></div>
               </div>
 
-              <details class="gugudan-status-check" id="gugudan-status-details" aria-label="내 구구단/나눗셈 상태">
-                <summary class="gugudan-status-summary">
+              <section class="gugudan-status-check is-collapsed" id="gugudan-status-check" aria-label="내 구구단/나눗셈 상태">
+                <div class="gugudan-status-summary">
                   <span class="gugudan-status-copy">
                     <b>내 구구단/나눗셈 상태</b>
-                    <span class="gugudan-status-description">기록 파일로 상태를 확인하거나 같은 학생번호 파일을 합칩니다.</span>
+                    <span class="gugudan-status-description">저장해 둔 기록 파일을 열어 상태를 확인하거나 여러 파일을 하나로 합칩니다.</span>
                   </span>
-                  <span class="gugudan-status-toggle" aria-hidden="true">
-                    <span class="when-closed">펴기</span>
-                    <span class="when-open">접기</span>
-                  </span>
-                </summary>
-                <div class="gugudan-status-body">
+                  <button class="gugudan-status-toggle" type="button" id="gugudan-status-toggle" aria-expanded="false" aria-controls="gugudan-status-body gugudan-status-panel">펴기</button>
+                </div>
+                <div class="gugudan-status-body" id="gugudan-status-body">
                   <div class="gugudan-status-actions">
                     <button class="ghost-action gugudan-status-action" type="button" id="gugudan-status-button">내 구구단 상태 확인</button>
-                    <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">구구단 기록 합치기</button>
                     <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="gugudan-weakness-practice-button">구구단 취약점 연습</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">구구단 기록 합치기</button>
                     <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-status-button">내 나눗셈(구구단) 상태 확인</button>
-                    <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-merge-records-button">나눗셈 기록 합치기</button>
                     <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="division-gugudan-weakness-practice-button">나눗셈 취약점 연습</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-merge-records-button">나눗셈 기록 합치기</button>
                   </div>
                   <input class="is-hidden" id="gugudan-status-file" type="file" accept=".csv,text/csv" />
                   <input class="is-hidden" id="gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
@@ -142,7 +166,7 @@
                     <div id="gugudan-status-content"></div>
                   </section>
                 </div>
-              </details>
+              </section>
 
               <div class="setup-actions">
                 <button class="primary-action start-action" type="button" id="start-button" disabled>도전 시작</button>
@@ -157,7 +181,7 @@
             <div class="play-nav-actions">
               <button class="ghost-action compact-action danger-action" type="button" id="finish-game-button" data-action="finish-game">게임 종료</button>
             </div>
-            <div class="play-title" id="play-title">놀퀴즈:점프맵</div>
+            <div class="play-title" id="play-title">위인 점프맵</div>
             <div class="play-status-actions">
               <div class="timer-pill" id="timer-pill">00:00</div>
               <button class="ghost-action compact-action audio-action" type="button" id="bgm-toggle-button" aria-pressed="false">음악 끄기</button>
@@ -205,7 +229,7 @@
               <div class="gugudan-record-status" id="gugudan-record-status" role="status"></div>
             </section>
             <div class="result-actions">
-              <button class="primary-action" type="button" id="restart-same-button">다시 시작</button>
+              <button class="primary-action" type="button" id="restart-same-button">같은 설정으로 다시 시작</button>
               <button class="ghost-action" type="button" id="back-setup-button">메인화면</button>
             </div>
           </div>
@@ -272,7 +296,7 @@
         }
       })();
     </script>
-    <script src="./assets/vendor/qr-js.js?v=20260602-loading-fit-longer"></script>
-    <script type="module" src="./app.js?v=20260602-hold-jump-tip"></script>
+    <script src="./assets/vendor/qr-js.js?v=20260602-split-loading"></script>
+    <script type="module" src="./app.js?v=20260602-hero-jumpmap-name"></script>
   </body>
 </html>
