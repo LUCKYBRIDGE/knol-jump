@@ -27,9 +27,14 @@
 ## Change Safety Rules
 - Keep changes inside this project directory unless the user explicitly expands scope.
 - Do not reference `../knolquiz-runtime`, `../knolquiz-local-lite`, or any sibling app at runtime.
-- Do not add Supabase, auth, classroom mode, ranking mode, saved records, `localStorage`, or IndexedDB.
+- Do not add Supabase, auth, classroom mode, ranking mode, or server-backed saved records.
+- Local browser storage is allowed only for the user's own 1-player gugudan/division-gugudan learning records.
+- Local learning-record storage must stay device-local and must not add server sync, login, classroom, ranking, or shared-user features.
+- Before writing local learning records, show a clear confirmation that asks whether this is really the current user's device/profile.
+- CSV import/export remains the safety and backup path for learning records. Importing a CSV may update the local learning state only after clear user action and warning.
+- Do not use IndexedDB unless an explicit later task says `localStorage` is insufficient. Prefer the smallest local-storage implementation that satisfies the learning-record requirement.
 - All sessions must end by the selected 1-10 minute timer.
-- Result screens show only the current in-memory session.
+- Result screens may show current session results and the user's local learning-record controls, but must not introduce class-wide, ranking, login, or server-backed history screens.
 - Do not add turtle defense code or turtle defense assets to this project.
 
 ## Migration Note

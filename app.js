@@ -111,6 +111,24 @@ const QUIZ_PACKS = [
     path: './assets/quiz/data/division-gugudan-2to9.csv'
   },
   {
+    id: 'make-10-addition',
+    label: '더해서 10 만들기',
+    kind: 'csv',
+    path: './assets/quiz/data/make-10-addition.csv'
+  },
+  {
+    id: 'make-100-addition',
+    label: '더해서 100 만들기',
+    kind: 'csv',
+    path: './assets/quiz/data/make-100-addition.csv'
+  },
+  {
+    id: 'make-10-100-1000-multiplication',
+    label: '10·100·1000 만들기 곱셈',
+    kind: 'csv',
+    path: './assets/quiz/data/make-10-100-1000-multiplication.csv'
+  },
+  {
     id: 'facecolor',
     label: '전개도: 평행한 면',
     kind: 'json',
@@ -439,14 +457,20 @@ const elements = {
   setupError: $('#setup-error'),
   gugudanStatusCheck: $('#gugudan-status-check'),
   gugudanStatusToggle: $('#gugudan-status-toggle'),
+  practiceCurrentStudent: $('#practice-current-student'),
+  practiceCurrentStudentHint: $('#practice-current-student-hint'),
+  practiceStudentSwitchButton: $('#practice-student-switch-button'),
+  practiceRecordManagerButton: $('#practice-record-manager-button'),
   gugudanStatusButton: $('#gugudan-status-button'),
   gugudanStatusFile: $('#gugudan-status-file'),
+  gugudanImportRecordsButton: $('#gugudan-import-records-button'),
   gugudanMergeRecordsButton: $('#gugudan-merge-records-button'),
   gugudanMergeRecordsFile: $('#gugudan-merge-records-file'),
   gugudanWeaknessPracticeButton: $('#gugudan-weakness-practice-button'),
   gugudanWeaknessPracticeFile: $('#gugudan-weakness-practice-file'),
   divisionGugudanStatusButton: $('#division-gugudan-status-button'),
   divisionGugudanStatusFile: $('#division-gugudan-status-file'),
+  divisionGugudanImportRecordsButton: $('#division-gugudan-import-records-button'),
   divisionGugudanMergeRecordsButton: $('#division-gugudan-merge-records-button'),
   divisionGugudanMergeRecordsFile: $('#division-gugudan-merge-records-file'),
   divisionGugudanWeaknessPracticeButton: $('#division-gugudan-weakness-practice-button'),
@@ -458,6 +482,12 @@ const elements = {
   gugudanReportCloseButton: $('#gugudan-report-close-button'),
   gugudanReportSubtitle: $('#gugudan-report-subtitle'),
   gugudanReportBody: $('#gugudan-report-body'),
+  practiceRecordManagerModal: $('#practice-record-manager-modal'),
+  practiceRecordManagerCloseButton: $('#practice-record-manager-close-button'),
+  practiceRecordManagerCurrentStudent: $('#practice-record-manager-current-student'),
+  practiceRecordManagerSwitchButton: $('#practice-record-manager-switch-button'),
+  practiceRecordManagerList: $('#practice-record-manager-list'),
+  practiceRecordManagerStatus: $('#practice-record-manager-status'),
   loadingScreen: $('#jump-loading-screen'),
   loadingTitle: $('#jump-loading-title'),
   loadingMessage: $('#jump-loading-message'),
@@ -482,7 +512,9 @@ const elements = {
   playerResults: $('#player-results'),
   gugudanRecordPanel: $('#gugudan-record-panel'),
   gugudanStudentId: $('#gugudan-student-id'),
+  gugudanStudentNote: $('#gugudan-student-note'),
   gugudanDownloadCurrentButton: $('#gugudan-download-current-button'),
+  gugudanDownloadBackupButton: $('#gugudan-download-backup-button'),
   gugudanMergeCsvButton: $('#gugudan-merge-csv-button'),
   gugudanRecordFile: $('#gugudan-record-file'),
   gugudanRecordStatus: $('#gugudan-record-status'),
@@ -501,6 +533,12 @@ const QR_SHARE_URL = 'https://knol-jump.lucky20220528.workers.dev/';
 const packCache = new Map();
 const mapCache = new Map();
 const imageCache = new Map();
+const LOCAL_RECORD_STORAGE_PREFIX = 'knol-jump-local-learning-record';
+const LOCAL_PRACTICE_STORE_KEY = 'knolquiz.practice-records.v1';
+const LOCAL_PRACTICE_LEGACY_STORE_KEYS = Object.freeze([
+  'knolquiz-jumpmap.practice-records.v1',
+  'knolquiz-turtle-defense.practice-records.v1'
+]);
 
 let selectedPackId = 'gugudan';
 let selectedMapId = 'jumpmap-01';
@@ -510,6 +548,7 @@ let selectedCharacterIds = Array.from({ length: Math.max(...PLAYER_COUNTS) }, (_
   CHARACTERS[index % CHARACTERS.length]?.id || 'sejong'
 ));
 let selectedDisplayMode = 'auto';
+let selectedPracticeStudentId = '';
 let modePromptResolved = false;
 let activeWeaknessPractice = null;
 let session = null;
@@ -1407,6 +1446,20 @@ function isPracticeRecordPack(packId = session?.packId) {
   return Boolean(getPracticeRecordTypeForPack(packId));
 }
 
+function getPracticeGridKey(dan, multiplier, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  return config.key === 'division-gugudan'
+    ? `${dan}÷${multiplier}`
+    : `${dan}x${multiplier}`;
+}
+
+function getPracticeGridExpression(dan, multiplier, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  return config.key === 'division-gugudan'
+    ? `${dan * multiplier}÷${dan}`
+    : `${dan}x${multiplier}`;
+}
+
 function getGugudanFact(question, recordType = 'gugudan') {
   const text = String(question?.text || question?.prompt || '').trim();
   const config = getPracticeRecordConfig(recordType);
@@ -1428,9 +1481,10 @@ function getGugudanFact(question, recordType = 'gugudan') {
       return null;
     }
     return {
+      packId: config.packId,
       dan: divisor,
       multiplier: quotient,
-      key: `${divisor}x${quotient}`,
+      key: getPracticeGridKey(divisor, quotient, recordType),
       expression: `${dividend}÷${divisor}`
     };
   }
@@ -1441,15 +1495,18 @@ function getGugudanFact(question, recordType = 'gugudan') {
   const multiplier = Number(match[2]);
   if (!Number.isFinite(dan) || !Number.isFinite(multiplier)) return null;
   return {
+    packId: config.packId,
     dan,
     multiplier,
-    key: `${dan}x${multiplier}`,
+    key: getPracticeGridKey(dan, multiplier, recordType),
     expression: `${dan}x${multiplier}`
   };
 }
 
 function createEmptyGugudanAggregate(fact) {
   return {
+    key: fact.key,
+    packId: fact.packId || '',
     dan: fact.dan,
     multiplier: fact.multiplier,
     expression: fact.expression,
@@ -1476,15 +1533,584 @@ function addGugudanAggregate(map, fact, values = {}) {
   return item;
 }
 
+function canUseLocalLearningStorage() {
+  try {
+    const key = `${LOCAL_PRACTICE_STORE_KEY}:test`;
+    window.localStorage.setItem(key, '1');
+    window.localStorage.removeItem(key);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function getLocalRecordStorageKey(recordType, studentId) {
+  return `${LOCAL_RECORD_STORAGE_PREFIX}:${recordType}:${getSafeStudentId(studentId)}`;
+}
+
+function getFallbackGugudanExpression(dan, multiplier, recordType = 'gugudan') {
+  return getPracticeGridExpression(dan, multiplier, recordType);
+}
+
+function getStoredGugudanFact(item, recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  const dan = Math.round(Number(item?.dan) || 0);
+  const multiplier = Math.round(Number(item?.multiplier) || 0);
+  const expression = String(item?.expression || getFallbackGugudanExpression(dan, multiplier, recordType)).trim();
+  const fact = getGugudanFact({ text: expression }, recordType) || {
+    packId: item?.packId || config.packId,
+    dan,
+    multiplier,
+    key: item?.key || getPracticeGridKey(dan, multiplier, recordType),
+    expression
+  };
+  if (
+    !Number.isFinite(fact.dan)
+    || !Number.isFinite(fact.multiplier)
+    || fact.dan < 2
+    || fact.dan > 9
+    || fact.multiplier < 1
+    || fact.multiplier > 9
+  ) {
+    return null;
+  }
+  return {
+    ...fact,
+    packId: fact.packId || item?.packId || config.packId,
+    key: fact.key || item?.key || getPracticeGridKey(fact.dan, fact.multiplier, recordType)
+  };
+}
+
+function serializeGugudanFactMap(factMap) {
+  return getSortedGugudanFacts(factMap).map((item) => ({
+    key: item.key,
+    packId: item.packId,
+    dan: item.dan,
+    multiplier: item.multiplier,
+    expression: item.expression,
+    attempts: Math.max(0, Number(item.attempts) || 0),
+    correct: Math.max(0, Number(item.correct) || 0),
+    wrong: Math.max(0, Number(item.wrong) || 0),
+    lastWrongAt: item.lastWrongAt || ''
+  }));
+}
+
+function createGugudanFactMapFromStoredItems(items = [], recordType = 'gugudan') {
+  const factMap = new Map();
+  items.forEach((item) => {
+    const fact = getStoredGugudanFact(item, recordType);
+    if (!fact) return;
+    addGugudanAggregate(factMap, fact, {
+      attempts: item.attempts,
+      correct: item.correct,
+      wrong: item.wrong,
+      lastWrongAt: item.lastWrongAt
+    });
+  });
+  return factMap;
+}
+
+function parseLocalGugudanRecordPayload(rawValue, recordType = 'gugudan') {
+  try {
+    const payload = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+    if (!payload || payload.recordType !== recordType) return null;
+    const studentId = getSafeStudentId(payload.studentId || '');
+    const factItems = Array.isArray(payload.factItems) ? payload.factItems : [];
+    const factMap = createGugudanFactMapFromStoredItems(factItems, recordType);
+    return {
+      version: Number(payload.version) || 0,
+      recordType,
+      studentId,
+      studentIds: new Set(studentId ? [studentId] : []),
+      sourceLabels: new Set([getPracticeRecordConfig(recordType).sourceLabel]),
+      createdAt: String(payload.createdAt || ''),
+      updatedAt: String(payload.updatedAt || ''),
+      factMap
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function deserializeGugudanFactMap(items = [], recordType = 'gugudan') {
+  return createGugudanFactMapFromStoredItems(items, recordType);
+}
+
+function createEmptyLocalPracticeStore() {
+  return {
+    version: 1,
+    activeStudentByPack: {},
+    records: {}
+  };
+}
+
+function normalizeLocalPracticeStore(parsed) {
+  if (!parsed || typeof parsed !== 'object') return createEmptyLocalPracticeStore();
+  return {
+    version: 1,
+    activeStudentByPack: parsed.activeStudentByPack && typeof parsed.activeStudentByPack === 'object'
+      ? parsed.activeStudentByPack
+      : {},
+    records: parsed.records && typeof parsed.records === 'object'
+      ? parsed.records
+      : {}
+  };
+}
+
+function hasLocalPracticeStoreRecords(store) {
+  return Object.values(store?.records || {}).some((packRecords) => (
+    packRecords && typeof packRecords === 'object' && Object.keys(packRecords).length > 0
+  ));
+}
+
+function mergeLocalPracticeStore(target, source) {
+  Object.entries(source?.activeStudentByPack || {}).forEach(([recordType, studentId]) => {
+    const safeStudentId = getSafeStudentId(studentId);
+    if (safeStudentId && !target.activeStudentByPack[recordType]) {
+      target.activeStudentByPack[recordType] = safeStudentId;
+    }
+  });
+
+  Object.entries(source?.records || {}).forEach(([recordType, packRecords]) => {
+    const config = getPracticeRecordConfig(recordType);
+    if (!packRecords || typeof packRecords !== 'object') return;
+    if (!target.records[config.key]) target.records[config.key] = {};
+    Object.entries(packRecords).forEach(([studentId, entry]) => {
+      const safeStudentId = getSafeStudentId(entry?.studentId || studentId);
+      if (!safeStudentId || !Array.isArray(entry?.facts)) return;
+      const existing = target.records[config.key][safeStudentId];
+      if (!existing?.facts) {
+        target.records[config.key][safeStudentId] = {
+          studentId: safeStudentId,
+          sourceLabel: entry.sourceLabel || config.sourceLabel,
+          createdAt: String(entry.createdAt || ''),
+          updatedAt: String(entry.updatedAt || ''),
+          facts: serializeGugudanFactMap(deserializeGugudanFactMap(entry.facts, config.key))
+        };
+        return;
+      }
+      const mergedMap = deserializeGugudanFactMap(existing.facts, config.key);
+      mergeGugudanFactMap(mergedMap, deserializeGugudanFactMap(entry.facts, config.key), config.key);
+      const updatedCandidates = [existing.updatedAt, entry.updatedAt].filter(Boolean).sort();
+      const createdCandidates = [existing.createdAt, entry.createdAt].filter(Boolean).sort();
+      target.records[config.key][safeStudentId] = {
+        ...existing,
+        ...entry,
+        studentId: safeStudentId,
+        sourceLabel: entry.sourceLabel || existing.sourceLabel || config.sourceLabel,
+        createdAt: createdCandidates[0] || '',
+        updatedAt: updatedCandidates[updatedCandidates.length - 1] || '',
+        facts: serializeGugudanFactMap(mergedMap)
+      };
+    });
+  });
+  return target;
+}
+
+function readLegacyJumpLocalPracticeStore() {
+  const store = createEmptyLocalPracticeStore();
+  ['gugudan', 'division-gugudan'].forEach((recordType) => {
+    const config = getPracticeRecordConfig(recordType);
+    const keyPrefix = `${LOCAL_RECORD_STORAGE_PREFIX}:${recordType}:`;
+    try {
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = window.localStorage.key(index) || '';
+        if (!key.startsWith(keyPrefix)) continue;
+        const record = parseLocalGugudanRecordPayload(window.localStorage.getItem(key), recordType);
+        if (!record?.studentId || !record.factMap.size) continue;
+        if (!store.records[config.key]) store.records[config.key] = {};
+        store.records[config.key][record.studentId] = {
+          studentId: record.studentId,
+          sourceLabel: config.sourceLabel,
+          createdAt: record.createdAt || '',
+          updatedAt: record.updatedAt || '',
+          facts: serializeGugudanFactMap(record.factMap)
+        };
+        if (!store.activeStudentByPack[config.key]) {
+          store.activeStudentByPack[config.key] = record.studentId;
+        }
+      }
+    } catch (_error) {
+      // Ignore malformed legacy entries and keep any readable records.
+    }
+  });
+  return store;
+}
+
+function removeLegacyLocalPracticeStores() {
+  if (!canUseLocalLearningStorage()) return;
+  const keysToRemove = new Set(LOCAL_PRACTICE_LEGACY_STORE_KEYS);
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index) || '';
+      if (key.startsWith(`${LOCAL_RECORD_STORAGE_PREFIX}:`)) {
+        keysToRemove.add(key);
+      }
+    }
+    keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+  } catch (_error) {
+    // Migration already wrote the shared store; stale legacy keys can remain if cleanup fails.
+  }
+}
+
+function readLocalPracticeStore() {
+  if (!canUseLocalLearningStorage()) return null;
+  const store = createEmptyLocalPracticeStore();
+  let foundLegacyRecords = false;
+
+  [LOCAL_PRACTICE_STORE_KEY, ...LOCAL_PRACTICE_LEGACY_STORE_KEYS].forEach((key) => {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(window.localStorage.getItem(key) || 'null');
+    } catch (_error) {
+      parsed = null;
+    }
+    const normalized = normalizeLocalPracticeStore(parsed);
+    if (key !== LOCAL_PRACTICE_STORE_KEY && hasLocalPracticeStoreRecords(normalized)) {
+      foundLegacyRecords = true;
+    }
+    mergeLocalPracticeStore(store, normalized);
+  });
+
+  const legacyJumpStore = readLegacyJumpLocalPracticeStore();
+  if (hasLocalPracticeStoreRecords(legacyJumpStore)) {
+    foundLegacyRecords = true;
+    mergeLocalPracticeStore(store, legacyJumpStore);
+  }
+
+  if (foundLegacyRecords && hasLocalPracticeStoreRecords(store) && writeLocalPracticeStore(store)) {
+    removeLegacyLocalPracticeStores();
+  }
+  return store;
+}
+
+function writeLocalPracticeStore(store) {
+  if (!canUseLocalLearningStorage()) return false;
+  try {
+    window.localStorage.setItem(LOCAL_PRACTICE_STORE_KEY, JSON.stringify(store || createEmptyLocalPracticeStore()));
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function getLocalPracticeEntry(recordType = 'gugudan', studentId = '') {
+  const config = getPracticeRecordConfig(recordType);
+  const store = readLocalPracticeStore();
+  if (!store) return null;
+  const safeStudentId = getSafeStudentId(studentId || store.activeStudentByPack?.[config.key] || '');
+  if (!safeStudentId) return null;
+  const entry = store.records?.[config.key]?.[safeStudentId];
+  if (!entry || !Array.isArray(entry.facts)) return null;
+  return {
+    store,
+    config,
+    studentId: safeStudentId,
+    entry,
+    record: {
+      version: 1,
+      recordType: config.key,
+      studentId: safeStudentId,
+      studentIds: new Set([safeStudentId]),
+      sourceLabels: new Set([entry.sourceLabel || config.sourceLabel]),
+      createdAt: String(entry.createdAt || ''),
+      updatedAt: String(entry.updatedAt || ''),
+      factMap: deserializeGugudanFactMap(entry.facts, config.key)
+    }
+  };
+}
+
+function getLocalPracticeActiveStudent(recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  const store = readLocalPracticeStore();
+  return getSafeStudentId(store?.activeStudentByPack?.[config.key] || '');
+}
+
+function getPreferredPracticeStudentId(recordType = '') {
+  const explicit = getSafeStudentId(selectedPracticeStudentId);
+  if (explicit) return explicit;
+  if (recordType) return getLocalPracticeActiveStudent(recordType);
+  return getLocalPracticeActiveStudent('gugudan') || getLocalPracticeActiveStudent('division-gugudan');
+}
+
+function getPracticeStudentSummaryText() {
+  const preferred = getPreferredPracticeStudentId();
+  if (preferred) return `${preferred}번`;
+  const gugudanStudent = getLocalPracticeActiveStudent('gugudan');
+  const divisionStudent = getLocalPracticeActiveStudent('division-gugudan');
+  if (gugudanStudent && divisionStudent && gugudanStudent !== divisionStudent) {
+    return `구구단 ${gugudanStudent}번 · 나눗셈 ${divisionStudent}번`;
+  }
+  return '아직 선택 안 됨';
+}
+
+function setLocalPracticeActiveStudent(studentId, recordType = '') {
+  const safeStudentId = getSafeStudentId(studentId);
+  if (!safeStudentId || !canUseLocalLearningStorage()) return false;
+  const store = readLocalPracticeStore();
+  if (!store) return false;
+  const recordTypes = recordType ? [recordType] : Object.keys(PRACTICE_RECORD_CONFIGS);
+  recordTypes.forEach((type) => {
+    const config = getPracticeRecordConfig(type);
+    store.activeStudentByPack[config.key] = safeStudentId;
+  });
+  return writeLocalPracticeStore(store);
+}
+
+function setPreferredPracticeStudentId(studentId, options = {}) {
+  const safeStudentId = getSafeStudentId(studentId);
+  selectedPracticeStudentId = safeStudentId;
+  if (safeStudentId && options.persist !== false) {
+    setLocalPracticeActiveStudent(safeStudentId, options.recordType || '');
+  }
+  refreshPracticeStudentUi();
+  return safeStudentId;
+}
+
+function refreshPracticeStudentUi() {
+  const summaryText = getPracticeStudentSummaryText();
+  const preferred = getPreferredPracticeStudentId();
+  if (elements.practiceCurrentStudent) {
+    elements.practiceCurrentStudent.textContent = summaryText;
+  }
+  if (elements.practiceCurrentStudentHint) {
+    elements.practiceCurrentStudentHint.textContent = preferred
+      ? '저장과 상태 확인은 이 번호 기준으로 시작합니다.'
+      : '결과 저장 전에 번호를 확인하세요.';
+  }
+  if (elements.practiceRecordManagerCurrentStudent) {
+    elements.practiceRecordManagerCurrentStudent.textContent = summaryText;
+  }
+  updateResultRecordStudentUi();
+}
+
+function updateResultRecordStudentUi() {
+  if (!elements.gugudanRecordPanel || elements.gugudanRecordPanel.classList.contains('is-hidden')) return;
+  const preferred = getPreferredPracticeStudentId(getCurrentPracticeRecordType());
+  const currentValue = getSafeStudentId(elements.gugudanStudentId?.value || '');
+  if (preferred && elements.gugudanStudentId && !currentValue) {
+    elements.gugudanStudentId.value = preferred;
+  }
+  const studentId = getSafeStudentId(elements.gugudanStudentId?.value || preferred || '');
+  if (elements.gugudanDownloadCurrentButton) {
+    elements.gugudanDownloadCurrentButton.textContent = studentId
+      ? `${studentId}번 기록으로 저장하기`
+      : '학생번호 입력 후 저장하기';
+  }
+  if (elements.gugudanStudentNote) {
+    const hasMismatch = Boolean(preferred && studentId && preferred !== studentId);
+    elements.gugudanStudentNote.classList.toggle('is-warning', hasMismatch);
+    if (!studentId) {
+      elements.gugudanStudentNote.textContent = '저장할 학생번호를 입력하세요.';
+    } else if (hasMismatch) {
+      elements.gugudanStudentNote.textContent = `현재 선택은 ${preferred}번입니다. 저장하면 ${studentId}번 기록으로 저장됩니다.`;
+    } else {
+      elements.gugudanStudentNote.textContent = `${studentId}번 기록으로 저장합니다.`;
+    }
+  }
+}
+
+function promptPracticeStudentSwitch() {
+  const current = getPreferredPracticeStudentId();
+  const entered = getSafeStudentId(window.prompt(
+    '현재 사용할 학생번호를 입력하세요.\n결과 저장과 내 상태 확인이 이 번호 기준으로 시작됩니다.',
+    current
+  ) || '');
+  if (!entered) return;
+  if (!window.confirm(
+    `${entered}번을 이 기기의 현재 학생번호로 표시합니다.\n\n`
+    + '지금 이 기기를 사용하는 학생의 번호가 맞나요?'
+  )) {
+    return;
+  }
+  setPreferredPracticeStudentId(entered);
+}
+
+function saveLocalPracticeRecord(recordType, studentId, factMap, options = {}) {
+  const config = getPracticeRecordConfig(recordType);
+  const safeStudentId = getSafeStudentId(studentId);
+  if (!safeStudentId || !factMap?.size) return null;
+  const store = readLocalPracticeStore();
+  if (!store) return null;
+  if (!store.records[config.key]) store.records[config.key] = {};
+  const existing = store.records[config.key][safeStudentId];
+  const mergedMap = options.replace || !existing?.facts
+    ? new Map()
+    : deserializeGugudanFactMap(existing.facts, config.key);
+  mergeGugudanFactMap(mergedMap, factMap, config.key);
+  if (!mergedMap.size) return null;
+
+  const nowText = new Date().toISOString();
+  store.records[config.key][safeStudentId] = {
+    studentId: safeStudentId,
+    sourceLabel: config.sourceLabel,
+    createdAt: existing?.createdAt || nowText,
+    updatedAt: nowText,
+    facts: serializeGugudanFactMap(mergedMap)
+  };
+  store.activeStudentByPack[config.key] = safeStudentId;
+  selectedPracticeStudentId = safeStudentId;
+  if (!writeLocalPracticeStore(store)) return null;
+  return getLocalPracticeEntry(config.key, safeStudentId)?.record || {
+    version: 1,
+    recordType: config.key,
+    studentId: safeStudentId,
+    studentIds: new Set([safeStudentId]),
+    sourceLabels: new Set([config.sourceLabel]),
+    createdAt: store.records[config.key][safeStudentId].createdAt,
+    updatedAt: nowText,
+    factMap: mergedMap
+  };
+}
+
+function loadLocalGugudanRecord(studentId, recordType = 'gugudan') {
+  const safeStudentId = getSafeStudentId(studentId);
+  if (!safeStudentId) return null;
+  return getLocalPracticeEntry(recordType, safeStudentId)?.record || null;
+}
+
+function getLocalGugudanRecordSummaries(recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  const store = readLocalPracticeStore();
+  const records = store?.records?.[config.key] || {};
+  const summaries = [];
+  Object.entries(records).forEach(([studentId, entry]) => {
+    const safeStudentId = getSafeStudentId(entry?.studentId || studentId);
+    if (!safeStudentId || !Array.isArray(entry?.facts)) return;
+    const record = getLocalPracticeEntry(config.key, safeStudentId)?.record;
+    if (!record?.factMap?.size) return;
+    const stats = getGugudanAggregateStats(record.factMap);
+    summaries.push({
+      studentId: safeStudentId,
+      record,
+      updatedAt: record.updatedAt,
+      attempts: stats.attempts,
+      accuracy: stats.accuracy
+    });
+  });
+  return summaries.sort((left, right) => (
+    String(right.updatedAt).localeCompare(String(left.updatedAt))
+    || String(left.studentId).localeCompare(String(right.studentId), 'ko-KR')
+  ));
+}
+
+function selectLocalGugudanRecord(recordType = 'gugudan', purposeText = '확인') {
+  const config = getPracticeRecordConfig(recordType);
+  const summaries = getLocalGugudanRecordSummaries(recordType);
+  if (!summaries.length) return null;
+  const preferred = getPreferredPracticeStudentId(recordType);
+  if (preferred) {
+    const matched = summaries.find((item) => item.studentId === preferred);
+    if (matched) return matched;
+    renderGugudanStatusPanelError(
+      `${preferred}번 ${config.sourceLabel} 로컬 기록이 없습니다. 번호를 바꾸거나 CSV에서 복구한 뒤 다시 시도하세요.`,
+      recordType
+    );
+    return null;
+  }
+  if (summaries.length === 1) return summaries[0];
+  const savedIds = summaries.map((item) => item.studentId).join(', ');
+  const requestedId = getSafeStudentId(window.prompt(
+    `${config.sourceLabel} 로컬 기록이 여러 개 있습니다.\n${purposeText}할 학생번호를 입력하세요.\n저장된 학생번호: ${savedIds}`,
+    summaries[0].studentId
+  ) || '');
+  const selected = summaries.find((item) => item.studentId === requestedId);
+  if (!selected) {
+    renderGugudanStatusPanelError('저장된 학생번호 중 하나를 정확히 입력해야 합니다.', recordType);
+    return null;
+  }
+  return selected;
+}
+
+function getSingleCsvStudentId(parsed, fallbackStudentId = '') {
+  const ids = Array.from(parsed?.studentIds || []).filter(Boolean);
+  if (ids.length > 1) {
+    return { studentId: '', error: '학생번호가 여러 개인 기록은 로컬 저장으로 불러올 수 없습니다. 한 학생의 기록만 선택하세요.' };
+  }
+  const studentId = getSafeStudentId(ids[0] || fallbackStudentId);
+  if (!studentId) {
+    return { studentId: '', error: '학생번호가 없는 기록은 로컬 저장으로 불러올 수 없습니다.' };
+  }
+  return { studentId, error: '' };
+}
+
+function confirmLocalGugudanWrite(studentId, recordType = 'gugudan', actionText = '저장') {
+  const config = getPracticeRecordConfig(recordType);
+  const activeStudentId = getLocalPracticeActiveStudent(recordType);
+  const activeText = activeStudentId && activeStudentId !== studentId
+    ? `\n현재 이 기기의 ${config.sourceLabel} 사용자는 ${activeStudentId}번으로 되어 있습니다.`
+    : '';
+  return window.confirm(
+    `${studentId}번 학생의 ${config.sourceLabel} 기록으로 ${actionText}합니다.\n\n`
+    + `지금 이 기기를 사용하는 학생이 ${studentId}번이 맞나요?\n`
+    + '다른 학생이면 취소하고 번호를 바꾸세요.'
+    + activeText
+  );
+}
+
+function formatGugudanFactMapSummary(factMap) {
+  if (!factMap?.size) return '기록 없음';
+  const stats = getGugudanAggregateStats(factMap);
+  return `풀이 ${stats.attempts}회 · 정답률 ${stats.accuracy} · 오답 ${stats.wrong}회`;
+}
+
+function confirmLocalGugudanImportReplace(studentId, recordType = 'gugudan', incomingFactMap = null, sourceText = 'CSV 백업') {
+  const config = getPracticeRecordConfig(recordType);
+  const activeStudentId = getLocalPracticeActiveStudent(recordType);
+  const localRecord = loadLocalGugudanRecord(studentId, recordType);
+  const incomingText = formatGugudanFactMapSummary(incomingFactMap);
+  const localText = formatGugudanFactMapSummary(localRecord?.factMap);
+  const activeText = activeStudentId && activeStudentId !== studentId
+    ? `\n현재 이 기기의 ${config.sourceLabel} 사용자는 ${activeStudentId}번으로 되어 있습니다.`
+    : '';
+  return window.confirm(
+    `${sourceText}로 ${studentId}번 ${config.sourceLabel} 상태를 복구합니다.\n\n`
+    + `${sourceText}: ${incomingText}\n`
+    + `현재 로컬: ${localText}\n\n`
+    + `지금 이 기기를 사용하는 학생이 ${studentId}번이 맞나요?\n`
+    + '이 기기에 저장된 기존 로컬 기록은 선택한 기록 내용으로 대체됩니다.\n'
+    + '오래된 파일이라면 최근 풀이 기록이 사라질 수 있습니다.\n'
+    + '다른 학생이면 취소하고 번호를 바꾸세요.'
+    + activeText
+  );
+}
+
+function saveGugudanFactMapToLocal(studentId, recordType = 'gugudan', factMap = new Map(), options = {}) {
+  const safeStudentId = getSafeStudentId(studentId);
+  if (!safeStudentId) return { ok: false, message: '학생번호가 필요합니다.' };
+  if (!canUseLocalLearningStorage()) {
+    return { ok: false, message: '이 브라우저에서는 로컬 저장을 사용할 수 없습니다. CSV 백업 저장을 이용하세요.' };
+  }
+  if (!factMap?.size) {
+    return { ok: false, message: `저장할 ${getPracticeRecordConfig(recordType).sourceLabel} 기록이 없습니다.` };
+  }
+
+  const record = saveLocalPracticeRecord(recordType, safeStudentId, factMap, {
+    replace: options.mergeExisting === false
+  });
+  if (!record) {
+    return { ok: false, message: '로컬 저장 중 오류가 발생했습니다. CSV 백업 저장을 이용하세요.' };
+  }
+  selectedPracticeStudentId = safeStudentId;
+  refreshPracticeStudentUi();
+  return {
+    ok: true,
+    message: '로컬 기록을 업데이트했습니다. CSV 백업도 주기적으로 저장해 두세요.',
+    record
+  };
+}
+
 function createGugudanAggregateFromRecords(records = [], recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
   const factMap = new Map();
   records.forEach((record) => {
     if (record.recordType && record.recordType !== recordType) return;
     const fact = {
+      packId: record.packId || config.packId,
       dan: record.dan,
       multiplier: record.multiplier,
-      key: record.factKey,
-      expression: record.expression
+      key: record.factKey || getPracticeGridKey(record.dan, record.multiplier, recordType),
+      expression: record.expression || getPracticeGridExpression(record.dan, record.multiplier, recordType)
     };
     addGugudanAggregate(factMap, fact, {
       attempts: 1,
@@ -1672,6 +2298,60 @@ function buildWeaknessPracticeQuestions(factMap, recordType = 'gugudan') {
   };
 }
 
+async function prepareWeaknessPracticeFromRecord(parsed, recordType = 'gugudan', sourceName = '', startedAt = performance.now()) {
+  const config = getPracticeRecordConfig(recordType);
+  await keepMinimumLoadingTime(startedAt, WEAKNESS_PRACTICE_MIN_READY_MS);
+  if (!parsed?.factMap?.size) {
+    activeWeaknessPractice = null;
+    renderWeaknessPracticeStatus(config.missingText, recordType, { kind: 'error', fileName: sourceName });
+    return;
+  }
+  const studentIds = Array.from(parsed.studentIds || []).filter(Boolean);
+  if (studentIds.length > 1) {
+    activeWeaknessPractice = null;
+    renderWeaknessPracticeStatus('학생번호가 여러 개인 파일입니다. 한 학생의 종합 기록 파일을 선택해 주세요.', recordType, {
+      kind: 'error',
+      fileName: sourceName
+    });
+    return;
+  }
+  const built = buildWeaknessPracticeQuestions(parsed.factMap, recordType);
+  if (!built.questions.length) {
+    activeWeaknessPractice = null;
+    renderWeaknessPracticeStatus('누적 오답이 없어 취약점 연습 문제를 만들지 않았습니다. 일반 연습으로 진행해도 됩니다.', recordType, {
+      kind: 'error',
+      fileName: sourceName
+    });
+    return;
+  }
+
+  selectedPackId = config.packId;
+  selectedPlayers = 1;
+  activeWeaknessPractice = {
+    recordType,
+    packId: config.packId,
+    label: getWeaknessPracticeLabel(recordType),
+    fileName: sourceName,
+    studentText: studentIds[0] || '학생번호 없음',
+    questions: built.questions,
+    dangerCount: built.dangerCount,
+    warningCount: built.warningCount,
+    stableCount: built.stableCount,
+    weakCount: built.weakCount
+  };
+  renderSetupControls();
+  renderWeaknessPracticeStatus('준비 완료 · 도전 시작을 누르면 1인 취약점 연습으로 시작합니다.', recordType, {
+    fileName: sourceName,
+    metrics: [
+      ['학생번호', activeWeaknessPractice.studentText],
+      ['집중 연습', `${built.dangerCount}문항`],
+      ['다시 확인', `${built.warningCount}문항`],
+      ['안정 확인', `${built.stableCount}문항`],
+      ['출제 목록', `${built.questions.length}문제`]
+    ]
+  });
+}
+
 async function prepareWeaknessPracticeFromFile(file, recordType = 'gugudan') {
   if (!file) return;
   const config = getPracticeRecordConfig(recordType);
@@ -1686,57 +2366,8 @@ async function prepareWeaknessPracticeFromFile(file, recordType = 'gugudan') {
 
   try {
     const text = await file.text();
-    await keepMinimumLoadingTime(startedAt, WEAKNESS_PRACTICE_MIN_READY_MS);
     const parsed = parseGugudanCsvAggregate(text, recordType);
-    if (!parsed.factMap.size) {
-      activeWeaknessPractice = null;
-      renderWeaknessPracticeStatus(config.missingText, recordType, { kind: 'error', fileName: file.name || '' });
-      return;
-    }
-    const studentIds = Array.from(parsed.studentIds).filter(Boolean);
-    if (studentIds.length > 1) {
-      activeWeaknessPractice = null;
-      renderWeaknessPracticeStatus('학생번호가 여러 개인 파일입니다. 한 학생의 종합 기록 파일을 선택해 주세요.', recordType, {
-        kind: 'error',
-        fileName: file.name || ''
-      });
-      return;
-    }
-    const built = buildWeaknessPracticeQuestions(parsed.factMap, recordType);
-    if (!built.questions.length) {
-      activeWeaknessPractice = null;
-      renderWeaknessPracticeStatus('누적 오답이 없어 취약점 연습 문제를 만들지 않았습니다. 일반 연습으로 진행해도 됩니다.', recordType, {
-        kind: 'error',
-        fileName: file.name || ''
-      });
-      return;
-    }
-
-    selectedPackId = config.packId;
-    selectedPlayers = 1;
-    activeWeaknessPractice = {
-      recordType,
-      packId: config.packId,
-      label: getWeaknessPracticeLabel(recordType),
-      fileName: file.name || '',
-      studentText: studentIds[0] || '학생번호 없음',
-      questions: built.questions,
-      dangerCount: built.dangerCount,
-      warningCount: built.warningCount,
-      stableCount: built.stableCount,
-      weakCount: built.weakCount
-    };
-    renderSetupControls();
-    renderWeaknessPracticeStatus('준비 완료 · 도전 시작을 누르면 1인 취약점 연습으로 시작합니다.', recordType, {
-      fileName: file.name || '',
-      metrics: [
-        ['학생번호', activeWeaknessPractice.studentText],
-        ['집중 연습', `${built.dangerCount}문항`],
-        ['다시 확인', `${built.warningCount}문항`],
-        ['안정 확인', `${built.stableCount}문항`],
-        ['출제 목록', `${built.questions.length}문제`]
-      ]
-    });
+    await prepareWeaknessPracticeFromRecord(parsed, recordType, file.name || '', startedAt);
   } catch (_error) {
     activeWeaknessPractice = null;
     renderWeaknessPracticeStatus(`${config.sourceLabel} 기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.`, recordType, {
@@ -1747,6 +2378,43 @@ async function prepareWeaknessPracticeFromFile(file, recordType = 'gugudan') {
     if (input) input.value = '';
     updateSetupSummary();
   }
+}
+
+async function prepareWeaknessPracticeFromLocal(recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  const startedAt = performance.now();
+  const preferred = getPreferredPracticeStudentId(recordType);
+  const summaries = getLocalGugudanRecordSummaries(recordType);
+  const selected = selectLocalGugudanRecord(recordType, '취약점 연습');
+  if (!selected) {
+    if (preferred || summaries.length) {
+      renderWeaknessPracticeStatus(
+        `${preferred ? `${preferred}번 ` : ''}${config.sourceLabel} 로컬 기록이 없습니다. 번호를 바꾸거나 CSV에서 복구한 뒤 다시 시도하세요.`,
+        recordType,
+        { kind: 'error', fileName: '로컬 기록' }
+      );
+      updateSetupSummary();
+      return;
+    }
+    renderWeaknessPracticeStatus(`이 기기에 저장된 ${config.sourceLabel} 기록이 없습니다. CSV 백업 파일을 선택해 취약점 연습을 준비합니다.`, recordType, {
+      kind: 'busy',
+      fileName: 'CSV 백업'
+    });
+    const input = getWeaknessPracticeInput(recordType);
+    if (input) {
+      input.value = '';
+      input.click();
+    }
+    return;
+  }
+  elements.setupError.textContent = '';
+  elements.startButton.disabled = true;
+  renderWeaknessPracticeStatus(`${config.sourceLabel} 로컬 기록을 읽고 취약 문항을 고르는 중입니다.`, recordType, {
+    kind: 'busy',
+    fileName: `학생번호 ${selected.studentId}`
+  });
+  await prepareWeaknessPracticeFromRecord(selected.record, recordType, `로컬 저장 · 학생번호 ${selected.studentId}`, startedAt);
+  updateSetupSummary();
 }
 
 function getSortedGugudanFacts(factMap) {
@@ -1898,11 +2566,13 @@ function openQrModal() {
   if (!elements.qrModal) return;
   renderQrModal();
   elements.qrModal.classList.remove('is-hidden');
+  document.documentElement.classList.add('qr-modal-open');
   document.body.classList.add('qr-modal-open');
 }
 
 function closeQrModal() {
   elements.qrModal?.classList.add('is-hidden');
+  document.documentElement.classList.remove('qr-modal-open');
   document.body.classList.remove('qr-modal-open');
 }
 
@@ -1914,6 +2584,7 @@ function recordGugudanAnswer(question, choice, correct, quiz) {
   const startedAtMs = Number(quiz?.questionStartedAtMs) || 0;
   session.gugudanRecords.push({
     recordType,
+    packId: fact.packId || recordType,
     factKey: fact.key,
     dan: fact.dan,
     multiplier: fact.multiplier,
@@ -1981,22 +2652,25 @@ function renderGugudanRecordPanel() {
   if (title) title.textContent = weaknessMode ? `${config.sourceLabel} 취약점 연습 기록 저장` : config.recordTitle;
   if (copy) {
     if (hasRecords && weaknessMode) {
-      copy.textContent = `${getGugudanWeaknessText(factMap, recordType)} 취약점 연습 결과도 같은 기록 파일에 누적됩니다.`;
+      copy.textContent = `${getGugudanWeaknessText(factMap, recordType)} 취약점 연습 결과도 로컬 기록에 누적됩니다.`;
     } else {
       copy.textContent = hasRecords
         ? getGugudanWeaknessText(factMap, recordType)
-        : '문제를 1개 이상 풀면 기록을 저장할 수 있습니다. 학생번호는 앱 안에 저장하지 않습니다.';
+        : '문제를 1개 이상 풀면 로컬 기록에 저장할 수 있습니다. CSV는 백업용입니다.';
     }
   }
   if (elements.gugudanDownloadCurrentButton) elements.gugudanDownloadCurrentButton.disabled = !hasRecords;
+  if (elements.gugudanDownloadBackupButton) elements.gugudanDownloadBackupButton.disabled = !hasRecords;
   if (elements.gugudanMergeCsvButton) elements.gugudanMergeCsvButton.disabled = !hasRecords;
-  setGugudanRecordStatus(hasRecords ? '이번 기록을 새로 저장하거나, 기존 기록 파일을 선택해 이어 저장할 수 있습니다.' : `저장할 ${config.sourceLabel} 풀이 기록이 없습니다.`, hasRecords ? '' : 'error');
+  updateResultRecordStudentUi();
+  setGugudanRecordStatus(hasRecords ? '로컬 저장이 기본입니다. CSV 백업은 기록이 사라질 때를 대비해 보관하세요.' : `저장할 ${config.sourceLabel} 풀이 기록이 없습니다.`, hasRecords ? '' : 'error');
 }
 
 function getStudentIdForCsv() {
   const rawValue = elements.gugudanStudentId?.value || '';
   const studentId = getSafeStudentId(rawValue);
   if (elements.gugudanStudentId) elements.gugudanStudentId.value = studentId;
+  updateResultRecordStudentUi();
   if (!studentId) {
     setGugudanRecordStatus('학생번호를 입력해야 기록을 저장할 수 있습니다.', 'error');
     elements.gugudanStudentId?.focus();
@@ -2023,7 +2697,24 @@ function getGugudanCsvOptions() {
   };
 }
 
-function downloadCurrentGugudanCsv() {
+function hasCurrentGugudanSessionSavedToLocal(studentId, recordType = getCurrentPracticeRecordType()) {
+  const marker = session?.localLearningRecordSaved;
+  return Boolean(marker && marker.studentId === studentId && marker.recordType === recordType);
+}
+
+function markCurrentGugudanSessionSavedToLocal(studentId, recordType = getCurrentPracticeRecordType()) {
+  if (!session) return;
+  session.localLearningRecordSaved = { studentId, recordType };
+}
+
+function clearCurrentGugudanSessionSavedToLocal(recordType = getCurrentPracticeRecordType()) {
+  if (!session?.localLearningRecordSaved) return;
+  if (!recordType || session.localLearningRecordSaved.recordType === recordType) {
+    session.localLearningRecordSaved = null;
+  }
+}
+
+function saveCurrentGugudanLocal() {
   const recordType = getCurrentPracticeRecordType();
   const config = getPracticeRecordConfig(recordType);
   if (!isGugudanSoloRecordResult()) {
@@ -2037,9 +2728,60 @@ function downloadCurrentGugudanCsv() {
     setGugudanRecordStatus(`저장할 ${config.sourceLabel} 풀이 기록이 없습니다.`, 'error');
     return;
   }
-  const csvText = buildGugudanCsv(studentId, factMap, getGugudanCsvOptions());
-  downloadCsvFile(getGugudanCsvFilename(studentId, false, recordType), csvText);
-  setGugudanRecordStatus('이번 기록을 저장했습니다.', 'success');
+  if (hasCurrentGugudanSessionSavedToLocal(studentId, recordType)) {
+    setGugudanRecordStatus('이번 기록은 이미 로컬 저장에 반영되어 있습니다. CSV 백업 저장으로 안전하게 보관할 수 있습니다.', 'success');
+    return;
+  }
+  if (!confirmLocalGugudanWrite(studentId, recordType, '저장/업데이트')) {
+    setGugudanRecordStatus('로컬 저장을 취소했습니다.', '');
+    return;
+  }
+  const saved = saveGugudanFactMapToLocal(studentId, recordType, factMap);
+  if (!saved.ok) {
+    setGugudanRecordStatus(saved.message, 'error');
+    return;
+  }
+  markCurrentGugudanSessionSavedToLocal(studentId, recordType);
+  setGugudanRecordStatus('로컬 기록에 이번 풀이를 반영했습니다. CSV 백업도 남겨 두면 더 안전합니다.', 'success');
+}
+
+function downloadCurrentGugudanCsv() {
+  const recordType = getCurrentPracticeRecordType();
+  const config = getPracticeRecordConfig(recordType);
+  if (!isGugudanSoloRecordResult()) {
+    setGugudanRecordStatus(config.recordUnavailableText, 'error');
+    return;
+  }
+  const studentId = getStudentIdForCsv();
+  if (!studentId) return;
+  const currentMap = getCurrentGugudanFactMap();
+  if (!currentMap.size) {
+    setGugudanRecordStatus(`백업할 ${config.sourceLabel} 풀이 기록이 없습니다.`, 'error');
+    return;
+  }
+  let localRecord = loadLocalGugudanRecord(studentId, recordType);
+  if (!hasCurrentGugudanSessionSavedToLocal(studentId, recordType) || !localRecord?.factMap?.size) {
+    if (!confirmLocalGugudanWrite(studentId, recordType, 'CSV 백업 전 먼저 저장/업데이트')) {
+      setGugudanRecordStatus('CSV 백업을 취소했습니다. 먼저 이 기기에 저장하면 안전하게 백업할 수 있습니다.', '');
+      return;
+    }
+    const saved = saveGugudanFactMapToLocal(studentId, recordType, currentMap);
+    if (!saved.ok) {
+      setGugudanRecordStatus(saved.message, 'error');
+      return;
+    }
+    markCurrentGugudanSessionSavedToLocal(studentId, recordType);
+    localRecord = saved.record || loadLocalGugudanRecord(studentId, recordType);
+  }
+  const backupMap = new Map();
+  if (localRecord?.factMap?.size) mergeGugudanFactMap(backupMap, localRecord.factMap, recordType);
+  if (!backupMap.size) {
+    setGugudanRecordStatus(`백업할 ${config.sourceLabel} 풀이 기록이 없습니다.`, 'error');
+    return;
+  }
+  const csvText = buildGugudanCsv(studentId, backupMap, getGugudanCsvOptions());
+  downloadCsvFile(getGugudanCsvFilename(studentId, true, recordType), csvText);
+  setGugudanRecordStatus('로컬 저장된 내용을 CSV 백업 파일로 저장했습니다. 브라우저 기록이 사라질 때 복구용으로 사용하세요.', 'success');
 }
 
 async function loadPreviousGugudanCsv(file) {
@@ -2048,12 +2790,6 @@ async function loadPreviousGugudanCsv(file) {
   const config = getPracticeRecordConfig(recordType);
   const studentId = getStudentIdForCsv();
   if (!studentId) return;
-  const currentMap = getCurrentGugudanFactMap();
-  if (!currentMap.size) {
-    setGugudanRecordStatus(`합칠 이번 ${config.sourceLabel} 풀이 기록이 없습니다.`, 'error');
-    return;
-  }
-
   try {
     const parsed = parseGugudanCsvAggregate(await file.text(), recordType);
     const mismatchedStudentIds = Array.from(parsed.studentIds).filter((id) => id !== studentId);
@@ -2066,11 +2802,17 @@ async function loadPreviousGugudanCsv(file) {
       return;
     }
 
-    const mergedMap = new Map(parsed.factMap);
-    mergeGugudanFactMap(mergedMap, currentMap);
-    const csvText = buildGugudanCsv(studentId, mergedMap, getGugudanCsvOptions());
-    downloadCsvFile(getGugudanCsvFilename(studentId, true, recordType), csvText);
-    setGugudanRecordStatus('기존 기록에 이번 기록을 이어 저장했습니다.', 'success');
+    if (!confirmLocalGugudanImportReplace(studentId, recordType, parsed.factMap, 'CSV 백업 파일')) {
+      setGugudanRecordStatus('CSV 불러오기를 취소했습니다.', '');
+      return;
+    }
+    const saved = saveGugudanFactMapToLocal(studentId, recordType, parsed.factMap, { mergeExisting: false });
+    if (!saved.ok) {
+      setGugudanRecordStatus(saved.message, 'error');
+      return;
+    }
+    clearCurrentGugudanSessionSavedToLocal(recordType);
+    setGugudanRecordStatus('CSV 백업 내용으로 로컬 상태를 바꿨습니다. 이번 풀이를 더하려면 이 기기에 저장하기를 다시 눌러 주세요.', 'success');
   } catch (_error) {
     setGugudanRecordStatus('기록 파일을 읽지 못했습니다. 이 앱에서 받은 기록 파일인지 확인하세요.', 'error');
   } finally {
@@ -2213,11 +2955,13 @@ function renderGugudanHeatmap(factMap, recordType = 'gugudan') {
   for (let dan = 2; dan <= 9; dan += 1) {
     cells.push(`<div class="gugudan-heatmap-cell is-label">${dan}</div>`);
     for (let multiplier = 1; multiplier <= 9; multiplier += 1) {
-      const key = `${dan}x${multiplier}`;
+      const key = getPracticeGridKey(dan, multiplier, recordType);
       const item = factMap.get(key) || {
+        key,
+        packId: config.packId,
         dan,
         multiplier,
-        expression: key,
+        expression: getPracticeGridExpression(dan, multiplier, recordType),
         attempts: 0,
         correct: 0,
         wrong: 0
@@ -2337,7 +3081,7 @@ function renderGugudanStatusReport(record, fileName = '', options = {}) {
       </div>
     </section>
 
-    <p class="gugudan-report-note">${escapeHtml(options.message || '선택한 기록 파일은 앱 안에 저장되지 않습니다.')}</p>
+    <p class="gugudan-report-note">${escapeHtml(options.message || '기록을 확인했습니다. 로컬 기록은 사용자가 확인했을 때만 업데이트됩니다.')}</p>
   `;
   setGugudanReportOpen(true, { restoreFocus: false });
 }
@@ -2395,14 +3139,258 @@ function renderGugudanStatusPanel(parsed, fileName = '', options = {}) {
   `;
 }
 
+function showLocalGugudanStatus(recordType = 'gugudan') {
+  const config = getPracticeRecordConfig(recordType);
+  const summaries = getLocalGugudanRecordSummaries(recordType);
+  const selected = selectLocalGugudanRecord(recordType, '상태 확인');
+  if (!selected) {
+    if (!summaries.length) {
+      renderGugudanStatusPanelError(`이 기기에 저장된 ${config.sourceLabel} 기록이 없습니다. CSV 백업이 있다면 CSV에서 복구 버튼으로 로컬 기록을 업데이트하세요.`, recordType);
+    }
+    return;
+  }
+  const label = `로컬 저장 · 학생번호 ${selected.studentId}`;
+  renderGugudanStatusPanel(selected.record, label, {
+    recordType,
+    message: '이 기기에 저장된 로컬 기록입니다. CSV 백업도 주기적으로 남겨 두세요.'
+  });
+  renderGugudanStatusReport(selected.record, label, {
+    recordType,
+    message: '이 기기에 저장된 로컬 기록입니다. CSV 백업 파일을 보관하면 기기 변경이나 기록 삭제 때 복구할 수 있습니다.'
+  });
+}
+
+function getAllPracticeRecordSummaries() {
+  return ['gugudan', 'division-gugudan']
+    .flatMap((recordType) => getLocalGugudanRecordSummaries(recordType).map((summary) => ({
+      ...summary,
+      recordType,
+      config: getPracticeRecordConfig(recordType)
+    })))
+    .sort((left, right) => (
+      String(left.studentId).localeCompare(String(right.studentId), 'ko-KR')
+      || String(left.config.sourceLabel).localeCompare(String(right.config.sourceLabel), 'ko-KR')
+    ));
+}
+
+function removeLocalPracticeRecord(recordType, studentId) {
+  const config = getPracticeRecordConfig(recordType);
+  const safeStudentId = getSafeStudentId(studentId);
+  const store = readLocalPracticeStore();
+  if (!store?.records?.[config.key]?.[safeStudentId]) return false;
+  delete store.records[config.key][safeStudentId];
+  if (!Object.keys(store.records[config.key]).length) {
+    delete store.records[config.key];
+  }
+  if (store.activeStudentByPack?.[config.key] === safeStudentId) {
+    delete store.activeStudentByPack[config.key];
+  }
+  const stillHasPreferred = Object.values(store.records || {}).some((packRecords) => (
+    packRecords && Object.prototype.hasOwnProperty.call(packRecords, selectedPracticeStudentId)
+  ));
+  if (selectedPracticeStudentId === safeStudentId && !stillHasPreferred) {
+    selectedPracticeStudentId = '';
+  }
+  return writeLocalPracticeStore(store);
+}
+
+function setPracticeRecordManagerStatus(message = '', kind = '') {
+  if (!elements.practiceRecordManagerStatus) return;
+  elements.practiceRecordManagerStatus.textContent = message;
+  elements.practiceRecordManagerStatus.classList.toggle('is-error', kind === 'error');
+  elements.practiceRecordManagerStatus.classList.toggle('is-success', kind === 'success');
+}
+
+function renderPracticeRecordManager() {
+  if (!elements.practiceRecordManagerList) return;
+  const summaries = getAllPracticeRecordSummaries();
+  if (elements.practiceRecordManagerCurrentStudent) {
+    elements.practiceRecordManagerCurrentStudent.textContent = getPracticeStudentSummaryText();
+  }
+  if (!summaries.length) {
+    elements.practiceRecordManagerList.innerHTML = `
+      <div class="practice-record-empty">
+        <b>아직 이 기기에 저장된 기록이 없습니다.</b>
+        <span>1인 구구단이나 나눗셈을 플레이한 뒤 결과 화면에서 저장하면 여기에 표시됩니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const grouped = new Map();
+  summaries.forEach((summary) => {
+    if (!grouped.has(summary.studentId)) grouped.set(summary.studentId, []);
+    grouped.get(summary.studentId).push(summary);
+  });
+
+  elements.practiceRecordManagerList.innerHTML = Array.from(grouped.entries()).map(([studentId, records]) => `
+    <section class="practice-record-student-card">
+      <div class="practice-record-student-head">
+        <div>
+          <span>학생번호</span>
+          <b>${escapeHtml(studentId)}번</b>
+        </div>
+        <button class="ghost-action" type="button" data-practice-record-action="select" data-student-id="${escapeHtml(studentId)}">이 번호 사용</button>
+      </div>
+      <div class="practice-record-item-list">
+        ${records.map((summary) => `
+          <article class="practice-record-item">
+            <div class="practice-record-item-main">
+              <b>${escapeHtml(summary.config.sourceLabel)}</b>
+              <span>풀이 ${escapeHtml(String(summary.attempts))}회 · 정답률 ${escapeHtml(summary.accuracy)}</span>
+            </div>
+            <div class="practice-record-item-actions">
+              <button class="ghost-action" type="button" data-practice-record-action="view" data-record-type="${escapeHtml(summary.recordType)}" data-student-id="${escapeHtml(studentId)}">상태 보기</button>
+              <button class="ghost-action" type="button" data-practice-record-action="backup" data-record-type="${escapeHtml(summary.recordType)}" data-student-id="${escapeHtml(studentId)}">CSV 백업</button>
+              <button class="ghost-action danger-action" type="button" data-practice-record-action="delete" data-record-type="${escapeHtml(summary.recordType)}" data-student-id="${escapeHtml(studentId)}">삭제</button>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
+function setPracticeRecordManagerOpen(open) {
+  const active = Boolean(open);
+  if (!elements.practiceRecordManagerModal) return;
+  if (active) {
+    renderPracticeRecordManager();
+    setPracticeRecordManagerStatus('');
+  }
+  elements.practiceRecordManagerModal.classList.toggle('is-hidden', !active);
+  elements.practiceRecordManagerModal.setAttribute('aria-hidden', String(!active));
+  document.body.classList.toggle('practice-record-manager-open', active);
+  if (active) {
+    elements.practiceRecordManagerCloseButton?.focus();
+  } else {
+    elements.practiceRecordManagerButton?.focus();
+  }
+}
+
+function getLocalPracticeRecordForAction(recordType, studentId) {
+  const record = loadLocalGugudanRecord(studentId, recordType);
+  if (!record?.factMap?.size) {
+    renderGugudanStatusPanelError('해당 로컬 기록을 찾을 수 없습니다.', recordType);
+    setPracticeRecordManagerStatus('해당 로컬 기록을 찾을 수 없습니다.', 'error');
+    renderPracticeRecordManager();
+    return null;
+  }
+  return record;
+}
+
+function handlePracticeRecordManagerAction(action, recordType, studentId) {
+  const safeStudentId = getSafeStudentId(studentId);
+  if (!safeStudentId) return;
+  if (action === 'select') {
+    setPreferredPracticeStudentId(safeStudentId);
+    renderPracticeRecordManager();
+    setPracticeRecordManagerStatus(`${safeStudentId}번을 현재 학생번호로 표시합니다.`, 'success');
+    return;
+  }
+  const config = getPracticeRecordConfig(recordType);
+  const record = getLocalPracticeRecordForAction(recordType, safeStudentId);
+  if (!record) return;
+  if (action === 'view') {
+    setPreferredPracticeStudentId(safeStudentId, { recordType });
+    const label = `로컬 저장 · 학생번호 ${safeStudentId}`;
+    renderGugudanStatusPanel(record, label, {
+      recordType,
+      message: '이 기기에 저장된 로컬 기록입니다.'
+    });
+    renderGugudanStatusReport(record, label, {
+      recordType,
+      message: '이 기기에 저장된 로컬 기록입니다. CSV 백업 파일을 보관하면 기기 변경이나 기록 삭제 때 복구할 수 있습니다.'
+    });
+    setPracticeRecordManagerOpen(false);
+    return;
+  }
+  if (action === 'backup') {
+    const csvText = buildGugudanCsv(safeStudentId, record.factMap, {
+      recordType,
+      minutes: '',
+      playedText: '',
+      sourceLabel: config.sourceLabel
+    });
+    downloadCsvFile(getGugudanCsvFilename(safeStudentId, true, recordType), csvText);
+    setPracticeRecordManagerStatus(`${safeStudentId}번 ${config.sourceLabel} CSV 백업을 만들었습니다.`, 'success');
+    return;
+  }
+  if (action === 'delete') {
+    if (!window.confirm(
+      `${safeStudentId}번 ${config.sourceLabel} 로컬 기록을 이 기기에서 삭제합니다.\n\n`
+      + 'CSV 백업이 없다면 이 기록은 복구할 수 없습니다. 삭제할까요?'
+    )) {
+      return;
+    }
+    if (removeLocalPracticeRecord(recordType, safeStudentId)) {
+      renderPracticeRecordManager();
+      refreshPracticeStudentUi();
+      setPracticeRecordManagerStatus(`${safeStudentId}번 ${config.sourceLabel} 로컬 기록을 삭제했습니다.`, 'success');
+    } else {
+      setPracticeRecordManagerStatus('삭제할 로컬 기록을 찾을 수 없습니다.', 'error');
+    }
+  }
+}
+
+function updateLocalGugudanRecordFromCsv(parsed, recordType = 'gugudan', fileName = '') {
+  if (!parsed?.factMap?.size) return false;
+  const { studentId, error } = getSingleCsvStudentId(parsed);
+  if (error) {
+    renderGugudanStatusPanel(parsed, fileName, {
+      recordType,
+      message: `${error} 보고서만 표시했습니다.`
+    });
+    renderGugudanStatusReport(parsed, fileName, {
+      recordType,
+      message: `${error} 로컬 기록은 변경하지 않았습니다.`
+    });
+    return false;
+  }
+  if (!confirmLocalGugudanImportReplace(studentId, recordType, parsed.factMap, 'CSV 백업 파일')) {
+    renderGugudanStatusPanel(parsed, fileName, {
+      recordType,
+      message: '로컬 업데이트를 취소했습니다. 보고서만 표시했습니다.'
+    });
+    renderGugudanStatusReport(parsed, fileName, {
+      recordType,
+      message: '로컬 업데이트를 취소했습니다. CSV 파일 내용은 보고서로만 확인했습니다.'
+    });
+    return false;
+  }
+  const saved = saveGugudanFactMapToLocal(studentId, recordType, parsed.factMap, { mergeExisting: false });
+  if (!saved.ok) {
+    renderGugudanStatusPanel(parsed, fileName, {
+      recordType,
+      message: saved.message
+    });
+    renderGugudanStatusReport(parsed, fileName, {
+      recordType,
+      message: saved.message
+    });
+    return false;
+  }
+  const label = `로컬 업데이트 · 학생번호 ${studentId}`;
+  renderGugudanStatusPanel(saved.record, label, {
+    recordType,
+    message: 'CSV 백업 파일 내용으로 이 기기의 로컬 기록을 바꿨습니다.'
+  });
+  renderGugudanStatusReport(saved.record, label, {
+    recordType,
+    message: 'CSV 백업 파일 내용으로 이 기기의 로컬 기록을 바꿨습니다. 이전 로컬 기록은 이 CSV 내용으로 대체되었습니다.'
+  });
+  return true;
+}
+
 async function loadGugudanStatusFile(file, recordType = 'gugudan') {
   if (!file) return;
   const config = getPracticeRecordConfig(recordType);
   try {
     const parsed = parseGugudanCsvAggregate(await file.text(), recordType);
-    renderGugudanStatusPanel(parsed, file.name || '', { recordType });
     if (parsed.factMap.size) {
-      renderGugudanStatusReport(parsed, file.name || '', { recordType });
+      updateLocalGugudanRecordFromCsv(parsed, recordType, file.name || '');
+    } else {
+      renderGugudanStatusPanel(parsed, file.name || '', { recordType });
     }
   } catch (_error) {
     renderGugudanStatusPanelError(`${config.sourceLabel} 기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.`, recordType);
@@ -2412,13 +3400,16 @@ async function loadGugudanStatusFile(file, recordType = 'gugudan') {
   }
 }
 
-function mergeGugudanFactMap(targetMap, sourceMap) {
+function mergeGugudanFactMap(targetMap, sourceMap, defaultRecordType = 'gugudan') {
   sourceMap.forEach((item) => {
+    const recordType = item.packId || defaultRecordType;
+    const config = getPracticeRecordConfig(recordType);
     addGugudanAggregate(targetMap, {
+      packId: item.packId || config.packId,
       dan: item.dan,
       multiplier: item.multiplier,
-      key: `${item.dan}x${item.multiplier}`,
-      expression: item.expression
+      key: item.key || getPracticeGridKey(item.dan, item.multiplier, recordType),
+      expression: item.expression || getPracticeGridExpression(item.dan, item.multiplier, recordType)
     }, item);
   });
 }
@@ -2447,7 +3438,7 @@ async function mergeSelectedGugudanRecordFiles(files, recordType = 'gugudan') {
       parsed.studentIds.forEach((id) => {
         if (id) studentIds.add(id);
       });
-      mergeGugudanFactMap(mergedMap, parsed.factMap);
+      mergeGugudanFactMap(mergedMap, parsed.factMap, recordType);
     });
   } catch (_error) {
     renderGugudanStatusPanelError('기록 파일을 읽을 수 없습니다. 파일 형식을 확인하세요.', recordType);
@@ -2479,22 +3470,39 @@ async function mergeSelectedGugudanRecordFiles(files, recordType = 'gugudan') {
   });
   const filename = getGugudanCsvFilename(studentId, true, recordType);
   downloadCsvFile(filename, csvText);
-  renderGugudanStatusPanel({
+  let localMessage = '새 파일을 보관해 주세요.';
+  let reportRecord = {
     factMap: mergedMap,
     studentIds,
+    recordType
+  };
+  if (confirmLocalGugudanImportReplace(studentId, recordType, mergedMap, '합친 CSV 기록')) {
+    const saved = saveGugudanFactMapToLocal(studentId, recordType, mergedMap, { mergeExisting: false });
+    if (saved.ok) {
+      reportRecord = saved.record || reportRecord;
+      localMessage = '합친 기록을 이 기기의 로컬 기록에도 반영했습니다. 새 CSV 파일도 보관해 주세요.';
+    } else {
+      localMessage = `${saved.message} 새 CSV 파일은 보관해 주세요.`;
+    }
+  } else {
+    localMessage = '로컬 기록은 변경하지 않았습니다. 새 CSV 파일은 보관해 주세요.';
+  }
+  renderGugudanStatusPanel({
+    factMap: reportRecord.factMap,
+    studentIds: reportRecord.studentIds,
     recordType
   }, filename, {
     recordType,
     title: config.mergeTitle,
-    message: `${selectedFiles.length}개 기록을 하나로 합쳐 저장했습니다.`
+    message: `${selectedFiles.length}개 기록을 하나로 합쳐 저장했습니다. ${localMessage}`
   });
   renderGugudanStatusReport({
-    factMap: mergedMap,
-    studentIds,
+    factMap: reportRecord.factMap,
+    studentIds: reportRecord.studentIds,
     recordType
   }, filename, {
     recordType,
-    message: `${selectedFiles.length}개 기록을 하나로 합쳐 저장했습니다. 새 파일을 보관해 주세요.`
+    message: `${selectedFiles.length}개 기록을 하나로 합쳐 저장했습니다. ${localMessage}`
   });
 }
 
@@ -2741,6 +3749,7 @@ function updateSetupSummary() {
     button.classList.toggle('is-selected', selected);
     button.setAttribute('aria-pressed', String(selected));
   });
+  refreshPracticeStudentUi();
 }
 
 function renderCharacterControls() {
@@ -3347,6 +4356,12 @@ function refillPlayerGauge(player, amount) {
 
 function isPlayerGaugeEmpty(player) {
   return Math.max(0, Number(player?.gauge) || 0) <= GAUGE_EPSILON;
+}
+
+function canUseGaugeEmptyAirDoubleJump(player) {
+  const state = player?.state;
+  if (!state || state.onGround) return false;
+  return !!state.jumpedFromGround && Number(state.jumpsUsed) === 1;
 }
 
 function isPlayerGroundedForQuiz(player) {
@@ -5123,8 +6138,10 @@ function stepPlayerPhysics(player, dt) {
         player.control.left = false;
         player.control.right = false;
       }
+      clearPlayerJumpInput(player);
+    } else if (!canUseGaugeEmptyAirDoubleJump(player)) {
+      clearPlayerJumpInput(player);
     }
-    clearPlayerJumpInput(player);
     if (!player.gaugeEmptyNotified || wasOnGround) notifyGaugeEmpty(player);
   }
 
@@ -6115,7 +7132,30 @@ function bindEvents() {
     const expanded = elements.gugudanStatusToggle.getAttribute('aria-expanded') === 'true';
     setGugudanStatusOpen(!expanded);
   });
+  elements.practiceStudentSwitchButton?.addEventListener('click', promptPracticeStudentSwitch);
+  elements.practiceRecordManagerButton?.addEventListener('click', () => setPracticeRecordManagerOpen(true));
+  elements.practiceRecordManagerCloseButton?.addEventListener('click', () => setPracticeRecordManagerOpen(false));
+  elements.practiceRecordManagerSwitchButton?.addEventListener('click', () => {
+    promptPracticeStudentSwitch();
+    renderPracticeRecordManager();
+  });
+  elements.practiceRecordManagerModal?.addEventListener('click', (event) => {
+    if (event.target === elements.practiceRecordManagerModal) {
+      setPracticeRecordManagerOpen(false);
+      return;
+    }
+    const button = event.target.closest('[data-practice-record-action]');
+    if (!button) return;
+    handlePracticeRecordManagerAction(
+      button.dataset.practiceRecordAction || '',
+      button.dataset.recordType || '',
+      button.dataset.studentId || ''
+    );
+  });
   elements.gugudanStatusButton?.addEventListener('click', () => {
+    showLocalGugudanStatus('gugudan');
+  });
+  elements.gugudanImportRecordsButton?.addEventListener('click', () => {
     if (!elements.gugudanStatusFile) return;
     elements.gugudanStatusFile.value = '';
     elements.gugudanStatusFile.click();
@@ -6124,6 +7164,9 @@ function bindEvents() {
     loadGugudanStatusFile(elements.gugudanStatusFile.files?.[0], 'gugudan');
   });
   elements.divisionGugudanStatusButton?.addEventListener('click', () => {
+    showLocalGugudanStatus('division-gugudan');
+  });
+  elements.divisionGugudanImportRecordsButton?.addEventListener('click', () => {
     if (!elements.divisionGugudanStatusFile) return;
     elements.divisionGugudanStatusFile.value = '';
     elements.divisionGugudanStatusFile.click();
@@ -6144,9 +7187,7 @@ function bindEvents() {
     mergeSelectedGugudanRecordFiles(elements.gugudanMergeRecordsFile.files, 'gugudan');
   });
   elements.gugudanWeaknessPracticeButton?.addEventListener('click', () => {
-    if (!elements.gugudanWeaknessPracticeFile) return;
-    elements.gugudanWeaknessPracticeFile.value = '';
-    elements.gugudanWeaknessPracticeFile.click();
+    prepareWeaknessPracticeFromLocal('gugudan');
   });
   elements.gugudanWeaknessPracticeFile?.addEventListener('change', () => {
     prepareWeaknessPracticeFromFile(elements.gugudanWeaknessPracticeFile.files?.[0], 'gugudan');
@@ -6160,14 +7201,14 @@ function bindEvents() {
     mergeSelectedGugudanRecordFiles(elements.divisionGugudanMergeRecordsFile.files, 'division-gugudan');
   });
   elements.divisionGugudanWeaknessPracticeButton?.addEventListener('click', () => {
-    if (!elements.divisionGugudanWeaknessPracticeFile) return;
-    elements.divisionGugudanWeaknessPracticeFile.value = '';
-    elements.divisionGugudanWeaknessPracticeFile.click();
+    prepareWeaknessPracticeFromLocal('division-gugudan');
   });
   elements.divisionGugudanWeaknessPracticeFile?.addEventListener('change', () => {
     prepareWeaknessPracticeFromFile(elements.divisionGugudanWeaknessPracticeFile.files?.[0], 'division-gugudan');
   });
-  elements.gugudanDownloadCurrentButton?.addEventListener('click', downloadCurrentGugudanCsv);
+  elements.gugudanStudentId?.addEventListener('input', updateResultRecordStudentUi);
+  elements.gugudanDownloadCurrentButton?.addEventListener('click', saveCurrentGugudanLocal);
+  elements.gugudanDownloadBackupButton?.addEventListener('click', downloadCurrentGugudanCsv);
   elements.gugudanMergeCsvButton?.addEventListener('click', () => {
     if (!getStudentIdForCsv()) return;
     if (!elements.gugudanRecordFile) return;
@@ -6214,6 +7255,9 @@ function bindEvents() {
       closeQrModal();
       if (elements.gugudanReportModal && !elements.gugudanReportModal.classList.contains('is-hidden')) {
         setGugudanReportOpen(false);
+      }
+      if (elements.practiceRecordManagerModal && !elements.practiceRecordManagerModal.classList.contains('is-hidden')) {
+        setPracticeRecordManagerOpen(false);
       }
     }
   });

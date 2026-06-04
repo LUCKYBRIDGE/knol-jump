@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>위인 점프맵</title>
-    <link rel="stylesheet" href="./styles.css?v=20260602-hero-jumpmap-name" />
+    <link rel="stylesheet" href="./styles.css?v=20260602-make-number-packs" />
   </head>
   <body class="theme-jumpmap">
     <section class="mode-prompt-modal is-hidden" id="mode-prompt-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="mode-prompt-title">
@@ -26,12 +26,23 @@
           </button>
           <button class="mode-prompt-choice" type="button" data-mode-prompt-choice="wide">
             <b>웹/전자칠판</b>
-            <span>넓은 화면 · 4인까지</span>
+            <span>넓은 화면 · 4인까지 · 성능 확인</span>
           </button>
+        </div>
+        <div class="mode-prompt-play-notes" aria-label="플레이 안내">
+          <div>
+            <b>2단 점프 가능</b>
+            <span>점프 중 한 번 더 점프할 수 있습니다.</span>
+          </div>
+          <div>
+            <b>1인 학습 상태 확인</b>
+            <span>로컬 기록과 CSV 백업으로 구구단/나눗셈 상태를 볼 수 있습니다.</span>
+          </div>
         </div>
         <div class="mode-prompt-note" role="note">
           <strong>시작 전에는 언제든 변경 가능</strong>
           <span id="mode-prompt-hint">우측 상단 <b>모드</b> 버튼으로 모바일, 태블릿, 웹/전자칠판을 다시 선택할 수 있습니다. 게임이 시작되면 화면 모드는 고정됩니다.</span>
+          <span>전자칠판에서 3~4인 플레이는 기기 성능과 화면 크기에 따라 끊김이 있을 수 있습니다.</span>
         </div>
       </div>
     </section>
@@ -143,18 +154,31 @@
                 <div class="gugudan-status-summary">
                   <span class="gugudan-status-copy">
                     <b>내 구구단/나눗셈 상태</b>
-                    <span class="gugudan-status-description">저장해 둔 기록 파일을 열어 상태를 확인하거나 여러 파일을 하나로 합칩니다.</span>
+                    <span class="gugudan-status-description">이 기기에 저장된 누적 기록을 확인하거나 CSV 백업을 불러옵니다.</span>
                   </span>
                   <button class="gugudan-status-toggle" type="button" id="gugudan-status-toggle" aria-expanded="false" aria-controls="gugudan-status-body gugudan-status-panel">펴기</button>
+                </div>
+                <div class="practice-student-strip" id="practice-student-strip" aria-label="현재 학생번호">
+                  <div class="practice-student-copy">
+                    <span>현재 학생번호</span>
+                    <b id="practice-current-student">아직 선택 안 됨</b>
+                    <em id="practice-current-student-hint">결과 저장 전에 번호를 확인하세요.</em>
+                  </div>
+                  <div class="practice-student-actions">
+                    <button class="ghost-action" type="button" id="practice-student-switch-button">번호 바꾸기</button>
+                    <button class="ghost-action" type="button" id="practice-record-manager-button">내 기록 관리</button>
+                  </div>
                 </div>
                 <div class="gugudan-status-body" id="gugudan-status-body">
                   <div class="gugudan-status-actions">
                     <button class="ghost-action gugudan-status-action" type="button" id="gugudan-status-button">내 구구단 상태 확인</button>
                     <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="gugudan-weakness-practice-button">구구단 취약점 연습</button>
-                    <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">구구단 기록 합치기</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="gugudan-import-records-button">구구단 CSV에서 복구</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="gugudan-merge-records-button">구구단 CSV 합치기</button>
                     <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-status-button">내 나눗셈(구구단) 상태 확인</button>
                     <button class="ghost-action gugudan-status-action weakness-practice-action" type="button" id="division-gugudan-weakness-practice-button">나눗셈 취약점 연습</button>
-                    <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-merge-records-button">나눗셈 기록 합치기</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-import-records-button">나눗셈 CSV에서 복구</button>
+                    <button class="ghost-action gugudan-status-action" type="button" id="division-gugudan-merge-records-button">나눗셈 CSV 합치기</button>
                   </div>
                   <input class="is-hidden" id="gugudan-status-file" type="file" accept=".csv,text/csv" />
                   <input class="is-hidden" id="gugudan-merge-records-file" type="file" accept=".csv,text/csv" multiple />
@@ -212,18 +236,20 @@
             </div>
             <div class="player-results" id="player-results"></div>
             <div class="result-grid" id="result-grid"></div>
-            <section class="gugudan-record-panel is-hidden" id="gugudan-record-panel" aria-label="구구단 학습 기록 저장">
+            <section class="gugudan-record-panel is-hidden" id="gugudan-record-panel" aria-label="학습 기록 저장">
               <div class="gugudan-record-copy">
                 <b>구구단 학습 기록 저장</b>
-                <p>학생번호는 저장 파일에만 들어가며, 앱 안에는 저장하지 않습니다.</p>
+                <p>학생번호를 확인한 뒤 이 기기에 누적 저장합니다. CSV는 백업과 복구용으로 보관하세요.</p>
               </div>
               <label class="gugudan-student-field" for="gugudan-student-id">
                 학생번호
                 <input id="gugudan-student-id" type="text" inputmode="numeric" autocomplete="off" placeholder="예: 12" maxlength="24" />
+                <span class="gugudan-student-note" id="gugudan-student-note">저장할 학생번호를 확인하세요.</span>
               </label>
               <div class="gugudan-record-actions">
-                <button class="primary-action" type="button" id="gugudan-download-current-button">이번 기록 저장하기</button>
-                <button class="ghost-action" type="button" id="gugudan-merge-csv-button">기존 기록에 이어 저장하기</button>
+                <button class="primary-action" type="button" id="gugudan-download-current-button">학생번호 입력 후 저장하기</button>
+                <button class="ghost-action" type="button" id="gugudan-download-backup-button">CSV 백업 만들기</button>
+                <button class="ghost-action" type="button" id="gugudan-merge-csv-button">CSV에서 복구하기</button>
                 <input class="is-hidden" id="gugudan-record-file" type="file" accept=".csv,text/csv" />
               </div>
               <div class="gugudan-record-status" id="gugudan-record-status" role="status"></div>
@@ -266,6 +292,31 @@
       </div>
     </section>
 
+    <section class="practice-record-manager-modal is-hidden" id="practice-record-manager-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="practice-record-manager-title">
+      <div class="practice-record-manager-card">
+        <div class="practice-record-manager-head">
+          <div>
+            <span class="screen-kicker">Local Records</span>
+            <h2 id="practice-record-manager-title">이 기기의 기록 관리</h2>
+            <p>학생번호별 로컬 기록을 확인하고, CSV 백업을 만들거나 필요 없는 기록을 삭제합니다.</p>
+          </div>
+          <button class="ghost-action practice-record-manager-close-button" type="button" id="practice-record-manager-close-button">닫기</button>
+        </div>
+        <div class="practice-record-manager-body">
+          <div class="practice-record-manager-current">
+            <div>
+              <span>현재 학생번호</span>
+              <b id="practice-record-manager-current-student">아직 선택 안 됨</b>
+            </div>
+            <button class="ghost-action" type="button" id="practice-record-manager-switch-button">번호 바꾸기</button>
+          </div>
+          <div class="practice-record-manager-list" id="practice-record-manager-list"></div>
+          <div class="practice-record-manager-status" id="practice-record-manager-status" role="status"></div>
+          <p class="practice-record-manager-note">로컬 기록은 이 브라우저에만 남습니다. 기기 변경이나 브라우저 데이터 삭제에 대비해 CSV 백업을 보관하세요.</p>
+        </div>
+      </div>
+    </section>
+
     <script>
       (() => {
         if (window.location.protocol !== 'file:') return;
@@ -296,7 +347,7 @@
         }
       })();
     </script>
-    <script src="./assets/vendor/qr-js.js?v=20260602-split-loading"></script>
-    <script type="module" src="./app.js?v=20260602-hero-jumpmap-name"></script>
+    <script src="./assets/vendor/qr-js.js?v=20260602-make-number-packs"></script>
+    <script type="module" src="./app.js?v=20260604-air-double-jump"></script>
   </body>
 </html>
