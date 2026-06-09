@@ -3026,6 +3026,13 @@ select {
   overflow-wrap: anywhere;
 }
 
+.choice-button.has-long-text-choice .choice-text {
+  font-size: clamp(14px, 1.8vw, 24px);
+  line-height: 1.24;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
 .choice-button:hover,
 .choice-button:focus-visible {
   border-color: var(--primary);
@@ -4546,6 +4553,10 @@ select {
     font-size: clamp(18px, 5.6vw, 30px);
   }
 
+  .choice-button.has-long-text-choice .choice-text {
+    font-size: clamp(12px, 3.6vw, 18px);
+  }
+
   .choice-index {
     width: 30px;
     height: 30px;
@@ -4621,6 +4632,11 @@ select {
   .map-view-grid.player-count-3 .choice-text,
   .map-view-grid.player-count-4 .choice-text {
     font-size: clamp(18px, 2.2vw, 30px);
+  }
+
+  .map-view-grid.player-count-3 .choice-button.has-long-text-choice .choice-text,
+  .map-view-grid.player-count-4 .choice-button.has-long-text-choice .choice-text {
+    font-size: clamp(11px, 1.25vw, 16px);
   }
 
   .map-view-grid.player-count-3 .choice-index,
@@ -4850,6 +4866,10 @@ select {
 
   .choice-text {
     font-size: clamp(16px, 6.4vw, 26px);
+  }
+
+  .choice-button.has-long-text-choice .choice-text {
+    font-size: clamp(12px, 3.8vw, 18px);
   }
 
   .choice-index {

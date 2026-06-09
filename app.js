@@ -35,6 +35,7 @@ const QUIZ_WRONG_REWARD = 0;
 const QUIZ_BATCH_SIZE = 3;
 const QUIZ_AUTO_ADVANCE_MS = 900;
 const QUIZ_WRONG_DELAY_MS = 3000;
+const QUIZ_OPEN_INPUT_GUARD_MS = 360;
 const GAUGE_EPSILON = 0.000001;
 const RUNTIME_MOVE_SPEED_SCALE = 0.9;
 const RUNTIME_AIRTIME_SCALE = 1.1;
@@ -127,6 +128,12 @@ const QUIZ_PACKS = [
     label: '10·100·1000 만들기 곱셈',
     kind: 'csv',
     path: './assets/quiz/data/make-10-100-1000-multiplication.csv'
+  },
+  {
+    id: 'desk-chair-patterns',
+    label: '규칙과 대응: 책상과 의자',
+    kind: 'json',
+    path: './assets/quiz/data/desk-chair-pattern-questions.json'
   },
   {
     id: 'facecolor',
@@ -4383,6 +4390,7 @@ function createPlayerQuizState() {
     autoTimerId: 0,
     pending: false,
     questionStartedAtMs: 0,
+    inputReadyAtMs: 0,
     feedback: '',
     feedbackKind: ''
   };
@@ -4636,7 +4644,9 @@ function nextQuestion(playerIndex = session?.quizPlayerIndex) {
     ...base,
     choices: shuffle(base.choices)
   };
-  quiz.questionStartedAtMs = Date.now();
+  const nowMs = Date.now();
+  quiz.questionStartedAtMs = nowMs;
+  quiz.inputReadyAtMs = nowMs + QUIZ_OPEN_INPUT_GUARD_MS;
   quiz.answerLocked = false;
   quiz.answered = false;
   quiz.selectedChoice = '';
@@ -4857,11 +4867,12 @@ function renderChoiceButton(choice, index, question, quiz) {
   const wrongClass = quiz?.answered && choiceValue === quiz.selectedChoice && choiceValue !== String(question.answer) ? ' is-wrong' : '';
   const isImageChoice = isQuizImageAsset(choiceValue);
   const imageClass = isImageChoice ? ' has-image-choice' : '';
+  const longTextClass = !isImageChoice && choiceValue.length >= 16 ? ' has-long-text-choice' : '';
   const choiceBody = isImageChoice
     ? `<span class="choice-media"><img src="${escapeHtml(resolveQuizAssetPath(choiceValue))}" alt="선택지 ${index + 1}" /></span>`
     : `<span class="choice-text">${escapeHtml(choiceValue)}</span>`;
   return `
-    <button class="choice-button choice-tone-${(index % 4) + 1}${imageClass}${correctClass}${wrongClass}" type="button" data-choice="${escapeHtml(choiceValue)}"${disabled}>
+    <button class="choice-button choice-tone-${(index % 4) + 1}${imageClass}${longTextClass}${correctClass}${wrongClass}" type="button" data-choice="${escapeHtml(choiceValue)}"${disabled}>
       <span class="choice-index">${index + 1}</span>
       ${choiceBody}
     </button>
@@ -6359,6 +6370,7 @@ function closeQuiz({ playerIndex = session?.quizPlayerIndex, rotate = false, rea
   quiz.correct = false;
   quiz.reward = 0;
   quiz.nextAllowedAt = 0;
+  quiz.inputReadyAtMs = 0;
   quiz.batchIndex = 0;
   if (quizPlayer) {
     if (quizPlayer.control) {
@@ -6401,7 +6413,9 @@ function submitAnswer(choice, playerIndex = session?.quizPlayerIndex) {
   const safeIndex = clamp(Math.round(Number(playerIndex) || 0), 0, session.players.length - 1);
   const quiz = getPlayerQuizState(safeIndex);
   if (!quiz?.open || quiz.answerLocked || !quiz.currentQuestion) return;
-  if (Date.now() >= session.deadlineAt) {
+  const nowMs = Date.now();
+  if (nowMs < (Number(quiz.inputReadyAtMs) || 0)) return;
+  if (nowMs >= session.deadlineAt) {
     finishSession();
     return;
   }
@@ -6414,7 +6428,7 @@ function submitAnswer(choice, playerIndex = session?.quizPlayerIndex) {
   quiz.answered = true;
   quiz.selectedChoice = choice;
   quiz.correct = correct;
-  quiz.nextAllowedAt = Date.now() + (correct ? QUIZ_AUTO_ADVANCE_MS : QUIZ_WRONG_DELAY_MS);
+  quiz.nextAllowedAt = nowMs + (correct ? QUIZ_AUTO_ADVANCE_MS : QUIZ_WRONG_DELAY_MS);
 
   const layer = getQuizLayer(safeIndex);
   $$('.choice-button', layer || document).forEach((button) => {
